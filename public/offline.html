@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>{{en.title}} · {{brand}}</title>
+  <link rel="stylesheet" href="/assets/app.css">
+  <script defer src="/assets/offline.js"></script>
+</head>
+<body data-offline-shell data-unavailable="{{en.unavailable}} / {{ha.unavailable}}" data-audit-blocked="{{en.auditBlocked}} / {{ha.auditBlocked}}">
+  <header class="site-header">
+    <span class="brand"><strong>{{brand}}</strong></span>
+  </header>
+  <main class="workspace care-workspace">
+    <header class="workspace-heading">
+      <h1 id="offline-title">{{en.title}} <span lang="ha">/ {{ha.title}}</span></h1>
+      <p id="offline-status" role="status">{{en.checking}} <span lang="ha">{{ha.checking}}</span></p>
+    </header>
+    <noscript><p>{{en.enableJavaScript}} <span lang="ha">{{ha.enableJavaScript}}</span></p></noscript>
+    <div id="offline-content"></div>
+    <div class="care-toolbar">
+      <a id="offline-back" href="/provider">{{en.back}} <span lang="ha">/ {{ha.back}}</span></a>
+      <span><button id="offline-clear" type="button" class="secondary" hidden>{{en.clear}} <span lang="ha">/ {{ha.clear}}</span></button></span>
+    </div>
+  </main>
+</body>
+</html>

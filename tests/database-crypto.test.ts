@@ -34,7 +34,7 @@ test('normal startup upgrades original staff names while preserving records and 
     const upgradedMothers = original.prepare('SELECT * FROM mothers ORDER BY id').all();
     assert.deepEqual(upgradedMothers.map(({ registered_by, request_key, registration_digest, ...legacy }) => legacy),
       mothersBefore.map(row => ({ ...row })));
-    assert.equal((original.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 3);
+    assert.equal((original.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 5);
     ensureMigrated(original);
     assert.deepEqual(original.prepare('SELECT * FROM users ORDER BY id').all(), after);
   } finally { original.close(); }

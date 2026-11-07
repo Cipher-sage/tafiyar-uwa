@@ -15,7 +15,7 @@ export function migrate(db: Database, migrationsDirectory = resolve('migrations'
   db.exec('BEGIN IMMEDIATE');
   try {
     const current = db.prepare('PRAGMA user_version').get() as { user_version: number };
-    if (current.user_version > 3) throw new Error('Database schema is newer than this app.');
+    if (current.user_version > 5) throw new Error('Database schema is newer than this app.');
     if (current.user_version === 0) {
       db.exec(readFileSync(resolve(migrationsDirectory, '001_initial.sql'), 'utf8'));
     }
@@ -24,6 +24,12 @@ export function migrate(db: Database, migrationsDirectory = resolve('migrations'
     }
     if (current.user_version < 3) {
       db.exec(readFileSync(resolve(migrationsDirectory, '003_care_forms.sql'), 'utf8'));
+    }
+    if (current.user_version < 4) {
+      db.exec(readFileSync(resolve(migrationsDirectory, '004_access_logs.sql'), 'utf8'));
+    }
+    if (current.user_version < 5) {
+      db.exec(readFileSync(resolve(migrationsDirectory, '005_lookup_outcomes.sql'), 'utf8'));
     }
     db.exec('COMMIT');
   } catch (error) {
@@ -34,6 +40,6 @@ export function migrate(db: Database, migrationsDirectory = resolve('migrations'
 
 export function ensureMigrated(db: Database): void {
   const current = db.prepare('PRAGMA user_version').get() as { user_version: number };
-  if (current.user_version === 1 || current.user_version === 2) migrate(db);
-  else if (current.user_version !== 3) throw new Error('Database is not ready. Run npm run db:migrate and npm run db:seed.');
+  if (current.user_version >= 1 && current.user_version < 5) migrate(db);
+  else if (current.user_version !== 5) throw new Error('Database is not ready. Run npm run db:migrate and npm run db:seed.');
 }

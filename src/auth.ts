@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import type { Context, MiddlewareHandler } from 'hono';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import type { Database } from './db.js';
@@ -10,22 +10,29 @@ export interface Principal {
   id: number; type: 'staff' | 'mother'; role: Role; name: string;
   facilityId: number; facilityName: string; maternalId?: string; language?: string; version: number;
 }
-export type AppEnv = { Variables: { principal: Principal | null } };
+export type AppEnv = { Variables: { principal: Principal | null; sessionInfo: { key: string; expires: number } | null } };
+
+const offlineMarker = 'tafiyar_offline_session';
+const publicSessionKey = (nonce: string) => createHash('sha256').update(nonce).digest('hex');
 
 export function cookieName(config: AppConfig): string { return config.secureCookies ? '__Host-mc_session' : 'mc_session'; }
 
 export function establishSession(c: Context<AppEnv>, config: AppConfig, type: 'staff' | 'mother', id: number, version: number): void {
-  const token = signSession({ type, id, version, expires: Math.floor(Date.now() / 1000) + config.sessionSeconds, nonce: randomBytes(16).toString('hex') }, config.sessionSecret);
+  const nonce = randomBytes(16).toString('hex');
+  const token = signSession({ type, id, version, expires: Math.floor(Date.now() / 1000) + config.sessionSeconds, nonce }, config.sessionSecret);
   setCookie(c, cookieName(config), token, { httpOnly: true, secure: config.secureCookies, sameSite: 'Strict', path: '/', maxAge: config.sessionSeconds });
+  setCookie(c, offlineMarker, publicSessionKey(nonce), { secure: config.secureCookies, sameSite: 'Strict', path: '/', maxAge: config.sessionSeconds });
 }
 
 export function clearSession(c: Context<AppEnv>, config: AppConfig): void {
   deleteCookie(c, cookieName(config), { path: '/', secure: config.secureCookies, httpOnly: true, sameSite: 'Strict' });
+  deleteCookie(c, offlineMarker, { path: '/', secure: config.secureCookies, sameSite: 'Strict' });
 }
 
 export function identify(db: Database, config: AppConfig): MiddlewareHandler<AppEnv> {
   return async (c, next) => {
     c.set('principal', null);
+    c.set('sessionInfo', null);
     const token = getCookie(c, cookieName(config));
     const claims = token ? verifySession(token, config.sessionSecret) : null;
     if (claims) {
@@ -40,6 +47,15 @@ export function identify(db: Database, config: AppConfig): MiddlewareHandler<App
           FROM mothers m JOIN facilities f ON f.id = m.registered_facility_id
           WHERE m.id = ? AND m.session_version = ?`).get(claims.id, claims.version) as Omit<Principal, 'type' | 'role'> | undefined;
         if (row) c.set('principal', { ...row, type: 'mother', role: 'mother' });
+      }
+    }
+    const principal = c.get('principal');
+    if (claims && principal) {
+      const key = publicSessionKey(claims.nonce);
+      c.set('sessionInfo', { key, expires: claims.expires * 1000 });
+      // Restore the public marker for providers signed in before the offline feature shipped.
+      if (c.req.path.startsWith('/provider') && principal.role === 'provider' && getCookie(c, offlineMarker) !== key) {
+        setCookie(c, offlineMarker, key, { secure: config.secureCookies, sameSite: 'Strict', path: '/', expires: new Date(claims.expires * 1000) });
       }
     }
     await next();

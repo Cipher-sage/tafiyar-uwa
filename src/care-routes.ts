@@ -8,7 +8,7 @@ import { getCopy, type Language } from './i18n.js';
 import { interfaceLanguage, rememberLanguage } from './interface-language.js';
 import { errorPage, motherAppointmentsPage, registrationPage, workerOpenPage, workerRecordPage } from './views.js';
 
-function requireRole(role: Role): MiddlewareHandler<AppEnv> {
+export function requireRole(role: Role): MiddlewareHandler<AppEnv> {
   return async (c, next) => {
     const user = c.get('principal');
     if (!user) return c.redirect(role === 'mother' ? '/login?kind=mother' : '/login?kind=staff', 303);

@@ -1,6 +1,8 @@
 import { html } from 'hono/html';
 import copy from './locales/en.json' with { type: 'json' };
 import { formatDate, getCopy, type Language } from './i18n.js';
+import type { MotherRecord, VisitRecord } from './care.js';
+import type { listAccessLogs } from './provider.js';
 
 type Markup = ReturnType<typeof html>;
 type Role = keyof typeof copy.roles;
@@ -46,7 +48,8 @@ function layout(body: Markup, title: string, language: Language = 'en') {
   return html`<!doctype html><html lang="${language}"><head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#19483e">
     <meta name="description" content="${copy.metaDescription}"><title>${title} · ${copy.pageTitle}</title>
-    <link rel="stylesheet" href="/assets/app.css"><script defer src="/assets/app.js"></script></head>
+    <link rel="stylesheet" href="/assets/app.css"><script defer src="/assets/app.js"></script>
+    <script defer src="/assets/offline.js"></script></head>
     <body><a class="skip-link" href="#main">${copy.skipLink}</a>${body}</body></html>`;
 }
 
@@ -129,12 +132,14 @@ export function dashboardPage(props: DashboardProps) {
   }[props.role] as [string, string];
   return layout(html`${header(true, language)}<main id="main" class="workspace">
     ${props.role === 'health_worker' ? languageLinks(language, '/worker') : ''}
+    ${props.role === 'admin' ? languageLinks(language, '/admin') : ''}
     <div class="workspace-heading"><div class="location">${icon('location')}${copy.region}</div>
       <h1>${title}</h1><p>${intro}</p></div>
     ${props.role === 'health_worker' ? html`<section class="workspace-actions">
       <a class="primary action-link" href="/worker/register">${copy.care.register}${icon('arrow')}</a>
       ${openForm(language)}</section>` : ''}
-    ${props.role === 'admin' ? adminDirectory(props) : accountDetails(props)}
+    ${props.role === 'admin' ? html`<a class="primary action-link" href="/admin/access-logs?lang=${language}">
+      ${copy.provider.auditTitle}${icon('arrow')}</a>${adminDirectory(props)}` : accountDetails(props)}
     <footer><span>${icon('lock')}${t.sharedDevice}</span><span>${copy.demoLabel}</span></footer>
     </main>`, title, language);
 }
@@ -253,6 +258,19 @@ function dateText(date: string, language: Language) {
   return html`<time datetime="${date}">${formatDate(date, language)}</time>`;
 }
 
+function visitHistory(visits: VisitSummary[], language: Language) {
+  const t = getCopy(language).care;
+  return html`<section class="panel"><h2>${t.history}</h2>
+    ${!visits.length ? html`<p>${t.noVisits}</p>` : visits.map(visit => html`
+      <details class="visit-entry"><summary>${dateText(visit.visitDate,language)} · ${visit.facilityName}</summary>
+        <dl class="record-data"><div><dt>${t.weeksPregnant}</dt><dd>${visit.weeksPregnant ?? t.notRecorded}</dd></div>
+          <div><dt>${t.weight}</dt><dd>${visit.weight ?? t.notRecorded}</dd></div>
+          <div><dt>${t.bloodPressure}</dt><dd>${visit.bloodPressure ?? t.notRecorded}</dd></div>
+          <div><dt>${t.notes}</dt><dd class="clinic-notes">${visit.notes || t.notRecorded}</dd></div>
+          <div><dt>${t.nextAppointment}</dt><dd>${visit.nextAppointment ? dateText(visit.nextAppointment,language) : t.notRecorded}</dd></div></dl>
+      </details>`)}</section>`;
+}
+
 export function workerRecordPage({requestKey,facilityName,record,today,values = {},errors,notice,language = 'en'}:
   FormPage & {record:WorkerRecord; today:string; notice?:string}) {
   const c = getCopy(language), t = c.care;
@@ -280,15 +298,7 @@ export function workerRecordPage({requestKey,facilityName,record,today,values = 
         maxlength="1000" rows="3">${values.notes ?? ''}</textarea></div>
       ${formInput({name:'nextAppointment',label:t.nextAppointment,type:'date',value:values.nextAppointment})}
       <button type="submit" class="primary">${t.saveVisit}${icon('arrow')}</button>
-    </form><section class="panel"><h2>${t.history}</h2>
-    ${!record.visits.length ? html`<p>${t.noVisits}</p>` : record.visits.map(visit => html`
-      <details class="visit-entry"><summary>${dateText(visit.visitDate,language)} · ${visit.facilityName}</summary>
-        <dl class="record-data"><div><dt>${t.weeksPregnant}</dt><dd>${visit.weeksPregnant ?? t.notRecorded}</dd></div>
-          <div><dt>${t.weight}</dt><dd>${visit.weight ?? t.notRecorded}</dd></div>
-          <div><dt>${t.bloodPressure}</dt><dd>${visit.bloodPressure ?? t.notRecorded}</dd></div>
-          <div><dt>${t.notes}</dt><dd class="clinic-notes">${visit.notes || t.notRecorded}</dd></div>
-          <div><dt>${t.nextAppointment}</dt><dd>${visit.nextAppointment ? dateText(visit.nextAppointment,language) : t.notRecorded}</dd></div></dl>
-      </details>`)}</section></main>`,t.motherRecord, language);
+    </form>${visitHistory(record.visits, language)}</main>`,t.motherRecord, language);
 }
 
 export function motherAppointmentsPage({name,maternalId,facilityName,language,today,appointments,notice}: {
@@ -319,4 +329,103 @@ export function motherAppointmentsPage({name,maternalId,facilityName,language,to
         <span>${item.facilityName}</span><small>${t.setOn} ${dateText(item.visitDate,language)}</small></li>`)}</ul></section>` : ''}
     <footer><span>${icon('lock')}${c.dashboard.sharedDevice}</span><span>${c.demoLabel}</span></footer>
     </main>`,t.appointments,language);
+}
+
+function timestampText(value: string, language: Language) {
+  const formatted = new Intl.DateTimeFormat(language === 'ha' ? 'ha-NG' : 'en-NG', {
+    dateStyle: 'medium', timeStyle: 'short', timeZone: 'Africa/Lagos', hour12: false,
+  }).format(new Date(value));
+  return html`<time datetime="${value}">${formatted}</time>`;
+}
+
+export function providerLookupPage({facilityName, language = 'en', values = {}, error}: {
+  facilityName: string; language?: Language; values?: FormValues; error?: string;
+}) {
+  const c = getCopy(language), p = c.provider;
+  return layout(html`${header(true, language)}<main class="workspace care-workspace" id="main">
+    <div class="care-toolbar"><span class="location">${icon('location')}${facilityName}</span>
+      ${languageLinks(language, '/provider')}</div>
+    <div class="workspace-heading"><h1>${p.lookupTitle}</h1><p>${p.lookupIntro}</p></div>
+    <form class="panel care-form" method="post" action="/provider/lookup" autocomplete="off">
+      ${formErrors(error ? [error] : undefined)}
+      <div class="field"><label for="lookup-id">${c.care.maternalId}</label>
+        <input id="lookup-id" name="maternalId" type="text" required maxlength="16" spellcheck="false"
+          autocapitalize="characters" aria-describedby="lookup-id-hint" value="${values.maternalId ?? ''}"
+          placeholder="${c.login.maternalIdPlaceholder}">
+        <small id="lookup-id-hint">${c.login.maternalIdHint}</small></div>
+      <div class="field"><label for="lookup-reason">${p.reason}</label><textarea id="lookup-reason"
+        name="reason" required minlength="3" maxlength="500" rows="3"
+        aria-describedby="lookup-reason-hint">${values.reason ?? ''}</textarea>
+        <small id="lookup-reason-hint">${p.reasonHint}</small></div>
+      <button class="primary" type="submit">${p.submit}${icon('arrow')}</button>
+    </form><div class="offline-actions"><a href="/offline">${p.lastRecord}</a></div>
+    <footer><span>${icon('lock')}${c.dashboard.sharedDevice}</span><span>${c.demoLabel}</span></footer>
+    </main>`,p.lookupTitle,language);
+}
+
+export function providerRecordPage({record, reason, openedAt, expiresAt, sessionKey, offlineGrant, language, facilityName}: {
+  record: {mother: MotherRecord; visits: VisitRecord[]}; reason: string; openedAt: string; expiresAt: string;
+  sessionKey: string; offlineGrant: string; language: Language; facilityName: string;
+}) {
+  const c = getCopy(language), p = c.provider, t = c.care;
+  const {maternalId, name, age, phone, expectedDeliveryDate, language: preferredLanguage, facilityName: homeFacility} = record.mother;
+  const snapshot = {
+    record: {
+      mother: {maternalId, name, age, phone, expectedDeliveryDate, language: preferredLanguage, facilityName: homeFacility},
+      visits: record.visits.map(({visitDate,weeksPregnant,bloodPressure,weight,notes,nextAppointment,facilityName}) =>
+        ({visitDate,weeksPregnant,bloodPressure,weight,notes,nextAppointment,facilityName})),
+    },
+    reason, openedAt, expiresAt, sessionKey, offlineGrant, language, facilityName,
+    copy: {care: t, provider: p, dashboard: c.dashboard, roles: c.roles, brand: c.brand},
+  };
+  return layout(html`${header(true, language)}<main class="workspace care-workspace" id="main">
+    <div class="care-toolbar"><a href="/provider">${p.back}</a>
+      <span class="location">${icon('location')}${facilityName}</span></div>
+    <div id="provider-record-content">
+      <div class="workspace-heading"><p>${p.readOnly}</p><h1>${name}</h1></div>
+      <section class="panel identity">
+        <div><span>${t.maternalId}</span><strong class="maternal-id">${maternalId}</strong></div>
+        <dl class="record-data provider-details">
+          <div><dt>${t.age}</dt><dd>${age}</dd></div><div><dt>${t.phone}</dt><dd>${phone ?? t.notRecorded}</dd></div>
+          <div><dt>${t.expectedDeliveryDate}</dt><dd>${expectedDeliveryDate ? dateText(expectedDeliveryDate,language) : t.notRecorded}</dd></div>
+          <div><dt>${t.language}</dt><dd>${preferredLanguage === 'ha' ? t.hausa : t.english}</dd></div>
+          <div><dt>${t.signedUpAt}</dt><dd>${homeFacility}</dd></div>
+          <div><dt>${p.reason}</dt><dd class="clinic-notes">${reason}</dd></div>
+          <div><dt>${p.savedAt}</dt><dd>${timestampText(openedAt,language)}</dd></div>
+          <div><dt>${p.expiresAt}</dt><dd>${timestampText(expiresAt,language)}</dd></div>
+        </dl></section>${visitHistory(record.visits,language)}
+    </div>
+    <div id="provider-snapshot" hidden data-payload="${JSON.stringify(snapshot)}"></div>
+    <p id="offline-status" role="status" data-ready="${p.offlineReady}" data-unavailable="${p.offlineUnavailable}"
+      data-cleared="${p.offlineCleared}" data-preparing="${p.offlinePreparing}"></p>
+    <div class="offline-actions"><a id="offline-link" href="/offline" hidden>${p.lastRecord}</a>
+      <button id="offline-clear" type="button" class="secondary" hidden>${p.clear}</button></div>
+    <footer><span>${icon('lock')}${c.dashboard.sharedDevice}</span><span>${c.demoLabel}</span></footer>
+    </main>`,p.recordTitle,language);
+}
+
+export function adminAccessLogsPage({logs, language}: {logs: ReturnType<typeof listAccessLogs>; language: Language}) {
+  const c = getCopy(language), p = c.provider;
+  const path = '/admin/access-logs';
+  return layout(html`${header(true, language)}<main class="workspace care-workspace" id="main">
+    <div class="care-toolbar"><a href="/admin">${p.adminBack}</a>
+      ${languageLinks(language, `${path}?page=${logs.page}`)}</div>
+    <div class="workspace-heading"><h1>${p.auditTitle}</h1><p>${p.auditIntro}</p></div>
+    ${logs.entries.length ? html`<ol class="audit-list">${logs.entries.map(entry => html`
+      <li class="panel audit-entry"><h2>${entry.staffName}</h2><p>${c.roles[entry.staffRole]} · ${entry.facilityName}</p>
+        <dl class="record-data provider-details">
+          <div><dt>${p.accessedAt}</dt><dd>${timestampText(entry.accessedAt,language)}</dd></div>
+          <div><dt>${p.outcome}</dt><dd>${p[entry.outcome]}</dd></div>
+          <div><dt>${c.care.maternalId}</dt><dd class="maternal-id">${entry.maternalId}</dd></div>
+          ${entry.motherName ? html`<div><dt>${c.care.name}</dt><dd>${entry.motherName}</dd></div>` : ''}
+          <div><dt>${p.reason}</dt><dd class="clinic-notes">${entry.reason}</dd></div>
+          <div><dt>${p.source}</dt><dd>${p[entry.source]}</dd></div>
+          ${entry.source === 'offline' && entry.receivedAt ? html`<div><dt>${p.receivedAt}</dt>
+            <dd>${timestampText(entry.receivedAt,language)}</dd></div>` : ''}
+        </dl></li>`)}</ol>` : html`<p class="panel">${p.auditEmpty}</p>`}
+    ${logs.hasPrevious || logs.hasNext ? html`<nav class="audit-pagination" aria-label="${p.pagination}">
+      ${logs.hasPrevious ? html`<a rel="prev" href="${path}?page=${logs.page - 1}&amp;lang=${language}">${p.previous}</a>` : ''}
+      <span aria-current="page">${p.page} ${logs.page}</span>
+      ${logs.hasNext ? html`<a rel="next" href="${path}?page=${logs.page + 1}&amp;lang=${language}">${p.next}</a>` : ''}
+    </nav>` : ''}</main>`,p.auditTitle,language);
 }

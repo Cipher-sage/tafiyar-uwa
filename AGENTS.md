@@ -10,7 +10,7 @@
 
 ## Delivery stages
 
-Follow `BUILD_BRIEF.md`. Step 2 includes registration, clinic visits and the mother's English/Hausa appointment page. Let the team review each completed stage before starting the next. Public hosting is a later stage. Keep the six business tables; do not add clinical decision support. Any future offline record view must remain limited to the last opened record, protect access on shared devices, and make its age visible.
+Follow `BUILD_BRIEF.md`. Step 3 adds provider lookup by Maternal ID and reason, administrator access logs and offline viewing of the last opened record. Let the team review each completed stage before starting the next. Public hosting is a later stage. Keep the six business tables. Offline record viewing must protect access on shared devices and make the copy’s age visible.
 
 ## Repository practices
 

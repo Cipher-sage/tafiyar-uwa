@@ -5,18 +5,43 @@ import { Hono } from 'hono';
 import { databasePath, loadConfig } from './config.js';
 import { openDatabase, ensureMigrated } from './db.js';
 import { createApp } from './app.js';
+import en from './locales/en.json' with { type: 'json' };
+import ha from './locales/ha.json' with { type: 'json' };
 
 const config = loadConfig();
 const db = openDatabase(databasePath());
 ensureMigrated(db);
 const app = await createApp(db, config);
+const offlineText: Record<string, string> = { brand: en.brand };
+for (const [language, copy] of [['en', en.offline], ['ha', ha.offline]] as const) {
+  for (const [key, value] of Object.entries(copy)) offlineText[language + '.' + key] = value;
+}
+const htmlEscapes: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+// The cached shell includes only generic bilingual copy and never uses a signed-in identity.
+const offlinePage = readFileSync(resolve('public/offline.html'), 'utf8').replace(/\{\{([\w.]+)\}\}/g, (_match, key: string) => {
+  const text = offlineText[key];
+  if (text === undefined) throw new Error('Missing offline interface translation.');
+  return text.replace(/[&<>"']/g, character => htmlEscapes[character]!);
+});
 // Only explicitly named public files are served. No directory browsing or project-file access.
 const publicApp = new Hono();
-for (const [name, type] of [['app.css', 'text/css; charset=utf-8'], ['app.js', 'application/javascript; charset=utf-8']] as const) {
-  publicApp.get(`/assets/${name}`, c => {
+const assets = [
+  ['/assets/app.css', 'app.css', 'text/css'],
+  ['/assets/app.js', 'app.js', 'application/javascript'],
+  ['/assets/offline.js', 'offline.js', 'application/javascript'],
+  ['/sw.js', 'sw.js', 'application/javascript'],
+  ['/offline', 'offline.html', 'text/html'],
+] as const;
+for (const [path, name, type] of assets) {
+  publicApp.get(path, c => {
     c.header('X-Content-Type-Options', 'nosniff');
     c.header('Cache-Control', 'no-cache');
-    return c.body(readFileSync(resolve('public', name), 'utf8'), 200, { 'Content-Type': type });
+    // Keep the offline page in the same browsing context as authenticated pages.
+    c.header('Cross-Origin-Opener-Policy', 'same-origin');
+    c.header('Referrer-Policy', 'same-origin');
+    c.header('Content-Security-Policy', "default-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
+    const body = path === '/offline' ? offlinePage : readFileSync(resolve('public', name), 'utf8');
+    return c.body(body, 200, { 'Content-Type': type + '; charset=utf-8' });
   });
 }
 publicApp.route('/', app);

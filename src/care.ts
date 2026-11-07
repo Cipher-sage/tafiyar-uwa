@@ -128,7 +128,7 @@ function readVisit(input: FormInput) {
 }
 
 // Keep each access check, read or write, and audit entry together. Never await inside this transaction.
-function transaction<T>(db: Database, work: () => T): T {
+export function transaction<T>(db: Database, work: () => T): T {
   db.exec('BEGIN IMMEDIATE');
   try {
     const result = work();
@@ -147,11 +147,11 @@ function checkWorker(db: Database, user: Principal) {
 }
 
 function audit(db: Database, user: Principal, motherId: number, reason: string) {
-  db.prepare('INSERT INTO access_logs(user_id, mother_id, reason, accessed_at) VALUES (?, ?, ?, ?)')
-    .run(user.id, motherId, reason, new Date().toISOString());
+  db.prepare('INSERT INTO access_logs(user_id, mother_id, reason, accessed_at, staff_role, staff_facility_id) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(user.id, motherId, reason, new Date().toISOString(), user.role, user.facilityId);
 }
 
-function findMother(db: Database, facilityId: number, maternalId: string): MotherRecord {
+export function findMother(db: Database, facilityId: number, maternalId: string): MotherRecord {
   const row = db.prepare(
     'SELECT m.id, m.maternal_id AS maternalId, m.name, m.age, m.phone, m.language,' +
     ' m.expected_delivery_date AS expectedDeliveryDate, m.registered_facility_id AS registeredFacilityId,' +
@@ -212,12 +212,16 @@ const visitColumns = 'v.id AS visitId, v.visit_date AS visitDate, v.next_appoint
 const clinicalColumns = 'v.weeks_pregnant AS weeksPregnant, v.blood_pressure AS bloodPressure, v.weight, v.notes';
 const visitOrder = ' FROM visits v JOIN facilities f ON f.id = v.facility_id WHERE v.mother_id = ? ORDER BY v.visit_date DESC, v.id DESC';
 
+export function clinicVisitHistory(db: Database, motherId: number): VisitRecord[] {
+  return db.prepare('SELECT ' + visitColumns + ', ' + clinicalColumns + visitOrder).all(motherId) as unknown as VisitRecord[];
+}
+
 export function getWorkerRecord(db: Database, user: Principal, maternalId: string) {
   return transaction(db, () => {
     checkWorker(db, user);
     const mother = findMother(db, user.facilityId, maternalId);
     audit(db, user, mother.id, 'Review record for a clinic visit');
-    const visits = db.prepare('SELECT ' + visitColumns + ', ' + clinicalColumns + visitOrder).all(mother.id) as unknown as VisitRecord[];
+    const visits = clinicVisitHistory(db, mother.id);
     return { mother, visits };
   });
 }

@@ -1,6 +1,6 @@
 # Tafiyar Uwa
 
-Tafiyar Uwa means “a mother’s journey” in Hausa. In this USPF Changemaker Challenge demo for Gombe State, a health worker can register a fictional mother, record clinic visits and schedule her next appointment. The mother signs in to see her appointment dates and clinic in English or Hausa.
+Tafiyar Uwa means “a mother’s journey” in Hausa. In this USPF Changemaker Challenge demo for Gombe State, a health worker registers a fictional mother, records clinic visits and schedules appointments. The mother can check her appointments in English or Hausa. With her sharing consent, a provider at the referral hospital can look up her antenatal history.
 
 ## Run it locally
 
@@ -42,10 +42,20 @@ The most recent visit by visit date sets the current appointment. If that visit 
 
 ## How access works
 
-The app checks the signed session and the database on each protected request. The database stores salted scrypt hashes of passwords and PINs. Workers can open registered records at their own facility. Each successful record opening logs the worker, mother, time and purpose. A mother’s appointment page uses her signed-in identity and shows scheduling details only. Providers have a hospital workspace and administrators have a facility directory. Sessions expire after 30 minutes. Signing out revokes that account’s existing sessions.
+The app checks the signed session and the database on each protected read. The database stores salted scrypt hashes of passwords and PINs. Workers can open registered records at their own facility. A mother’s appointment page uses her signed-in identity and shows scheduling details only. Provider lookups require an ID, a reason and existing consent to share the record. Administrators can inspect staff access. Sessions expire after 30 minutes. Signing out revokes that account’s existing sessions on the server.
 
 Use fictional records throughout. Only source code, migrations, setup scripts, sample configuration and tests belong in Git. Local secrets, database files, downloaded packages and compiled output are ignored and can be created on each machine.
 
+## Try a hospital lookup across two browsers
+
+1. In one browser, sign in as the **provider**. Enter `MC-7KQ4XM` and a reason such as “Review antenatal history for the referral visit.” You can also use a newly registered fictional mother whose sharing box was checked. Review the visit history, clinic and dates. The hospital view is read-only.
+2. In a separate browser or private window, sign in as the **administrator** and choose **Record access logs**. Find the hospital lookup by ID or reason on the list. Each entry shows the staff member, facility, time and outcome. Try `MC-3HW7SC` in the provider browser to see the same unavailable response that an unknown ID would receive. The administrator can see the denied attempt.
+3. In the provider’s original tab, open a shared record and wait for **Offline copy ready on this device**. Disconnect the browser from the network, then choose **Open last record offline**. Check the time the copy was opened online. Reconnect and refresh the administrator’s log to see the offline opening and when the server received it.
+
+Offline viewing needs JavaScript and a browser that supports service workers on localhost or HTTPS. Only the latest opened record is available, in the same provider tab, until the sign-in expires. Opening another record replaces it. Use **Remove saved copy** or sign out before sharing the device. Offline views are reported when this browser next reaches the app online. Clearing site data before it reconnects can discard pending reports. A disconnected copy reflects the consent and visit history at the time of the online lookup.
+
+The browser regression check runs with `node --import tsx scripts/check-provider-browser.mjs`. It uses a temporary fictional database and separate provider/admin sessions. Install Playwright in your test environment, or point `PLAYWRIGHT_MODULE_PATH` at its `index.mjs`. Set `CHROME_PATH` when using an existing Chrome installation. Optional `PROVIDER_SCREENSHOT_DIRECTORY` saves screenshots from the check.
+
 ## Next review
 
-Step 2 is ready for the team to try with fictional data. The Hausa copy is a draft for review by a fluent speaker in Gombe. The next stage in the [build brief](BUILD_BRIEF.md) covers cross-clinic provider lookup and the administrator’s access log.
+Step 3 is ready for the team to try with fictional data. The Hausa copy is a draft for review by a fluent speaker in Gombe. The next stage in the [build brief](BUILD_BRIEF.md) covers the basic-phone simulator and reminder outbox.

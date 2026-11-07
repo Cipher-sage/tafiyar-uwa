@@ -9,6 +9,7 @@ import { identify, establishSession, clearSession, homeFor, LoginThrottle, type 
 import { loginPage, dashboardPage, errorPage } from './views.js';
 import en from './locales/en.json' with { type: 'json' };
 import { addCareRoutes } from './care-routes.js';
+import { addProviderRoutes } from './provider-routes.js';
 import { interfaceLanguage, rememberLanguage } from './interface-language.js';
 import { getCopy } from './i18n.js';
 
@@ -58,7 +59,7 @@ export async function createApp(db: Database, config: AppConfig): Promise<Hono<A
   app.use('*', bodyLimit({ maxSize: 32 * 1024, onError: c => c.json({ error: getCopy(interfaceLanguage(c)).security.tooLarge }, 413) }));
   app.use('/auth/*', bodyLimit({ maxSize: 4096, onError: c => c.json({ error: getCopy(interfaceLanguage(c)).security.tooLarge }, 413) }));
   app.use('*', identify(db, config));
-  app.get('/health', c => c.json({ status: 'ok', stage: 2, fictionalDataOnly: true }));
+  app.get('/health', c => c.json({ status: 'ok', stage: 3, fictionalDataOnly: true }));
   app.get('/', c => c.redirect(c.get('principal') ? homeFor(c.get('principal')!.role) : '/login', 303));
   app.get('/login', c => {
     if (c.get('principal')) return c.redirect(homeFor(c.get('principal')!.role), 303);
@@ -129,6 +130,7 @@ export async function createApp(db: Database, config: AppConfig): Promise<Hono<A
     return c.redirect('/login?notice=signed-out', 303);
   });
 
+  addProviderRoutes(app, db, config);
   app.use('/api/*', async (c, next) => {
     if (!c.get('principal')) return c.json({ error: en.security.signInRequired }, 401);
     await next();
@@ -162,7 +164,7 @@ export async function createApp(db: Database, config: AppConfig): Promise<Hono<A
   }
 
   addCareRoutes(app, db, config);
-  for (const role of ['admin', 'health_worker', 'provider'] as const) {
+  for (const role of ['admin', 'health_worker'] as const) {
     app.get(homeFor(role), c => {
       const user = c.get('principal');
       const language = interfaceLanguage(c);
@@ -171,7 +173,7 @@ export async function createApp(db: Database, config: AppConfig): Promise<Hono<A
       const count = (query: string, ...values: (number | string)[]) => (db.prepare(query).get(...values) as { count: number }).count;
       const stats = role === 'admin'
         ? { facilities: count('SELECT COUNT(*) AS count FROM facilities'), staff: count('SELECT COUNT(*) AS count FROM users WHERE active = 1'), mothers: count('SELECT COUNT(*) AS count FROM mothers') }
-        : { facilities: 1, staff: 0, mothers: role === 'health_worker' ? count('SELECT COUNT(*) AS count FROM mothers WHERE registered_facility_id = ?', user.facilityId) : 0 };
+        : { facilities: 1, staff: 0, mothers: count('SELECT COUNT(*) AS count FROM mothers WHERE registered_facility_id = ?', user.facilityId) };
       const adminDirectory = role === 'admin' ? directory() : {};
       return c.html(dashboardPage({ role, language, name: user.name, facilityName: user.facilityName,
         stats, ...adminDirectory } as Parameters<typeof dashboardPage>[0]));
