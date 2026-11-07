@@ -1,6 +1,6 @@
 # Tafiyar Uwa
 
-Tafiyar Uwa means “a mother’s journey” in Hausa. This antenatal care demo for the USPF Changemaker Challenge connects two fictional primary health centres and a referral hospital in Gombe State, Nigeria. Step 1 lets clinic staff and mothers sign in and checks what each person can see.
+Tafiyar Uwa means “a mother’s journey” in Hausa. In this USPF Changemaker Challenge demo for Gombe State, a health worker can register a fictional mother, record clinic visits and schedule her next appointment. The mother signs in to see her appointment dates and clinic in English or Hausa.
 
 ## Run it locally
 
@@ -32,17 +32,20 @@ Choose **Clinic team** for staff or **Mother** for a maternal account. Look up t
 | Demo Mother D | `MC-3HW7SC` | `SEED_MOTHER_D_PIN` |
 | Demo Mother E | `MC-9BX2RA` | `SEED_MOTHER_E_PIN` |
 
-1. Sign in as the first health worker. Check the facility name, then open `/admin` in the same browser. You should see an access-denied page.
-2. Sign out and sign in as the hospital provider. Check the hospital name. The provider workspace does not expose patient records in Step 1.
-3. Sign in as Demo Mother A. Check that her page shows `MC-7KQ4XM`. Try her PIN with Demo Mother B’s ID. Sign-in should fail.
-4. Sign in as administrator. The directory should show three fictional facilities and four staff accounts. Sign out and revisit `/admin` to check that a fresh sign-in is required.
+## Try registration, a visit and an appointment
+
+1. Sign in as `worker@tafiyaruwa.test` and select **Register a mother**. Enter a fictional name and age, choose her preferred language and set a demo PIN. The consent tick box records whether she agrees to share her record with other participating clinics. Leaving it unchecked still allows local registration.
+2. Save the registration and copy the new Maternal ID. Record a visit dated today and enter the date of her next appointment. To record another visit later, use **Open a record** at the same clinic and enter the ID.
+3. In a separate browser session, choose **Mother** and sign in with that ID and PIN. Check the date and clinic. Switch between **English** and **Hausa**, then sign out and back in to verify the saved preference.
+
+The most recent visit by visit date sets the current appointment. If that visit has no next date, the page says so. Earlier plans stay in a separate list. Dates in that list do not indicate attendance.
 
 ## How access works
 
-The app checks the signed session and the database on each protected request. The database stores salted scrypt hashes of staff passwords and maternal PINs. A mother’s profile uses the account in her session. Workers see their facility, providers see their own hospital workspace and administrators see the demo directory. Sessions expire after 30 minutes. Signing out revokes that account’s existing sessions.
+The app checks the signed session and the database on each protected request. The database stores salted scrypt hashes of passwords and PINs. Workers can open registered records at their own facility. Each successful record opening logs the worker, mother, time and purpose. A mother’s appointment page uses her signed-in identity and shows scheduling details only. Providers have a hospital workspace and administrators have a facility directory. Sessions expire after 30 minutes. Signing out revokes that account’s existing sessions.
 
 Use fictional records throughout. Only source code, migrations, setup scripts, sample configuration and tests belong in Git. Local secrets, database files, downloaded packages and compiled output are ignored and can be created on each machine.
 
 ## Next review
 
-After the team checks Step 1, Step 2 introduces registration with consent, generated Maternal IDs, visit recording and the mother’s English/Hausa appointment view. The [build brief](BUILD_BRIEF.md) includes the later provider lookup, access log and phone simulation.
+Step 2 is ready for the team to try with fictional data. The Hausa copy is a draft for review by a fluent speaker in Gombe. The next stage in the [build brief](BUILD_BRIEF.md) covers cross-clinic provider lookup and the administrator’s access log.

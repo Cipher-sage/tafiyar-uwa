@@ -8,6 +8,9 @@ import { hashSecret, verifySecret } from './crypto.js';
 import { identify, establishSession, clearSession, homeFor, LoginThrottle, type AppEnv, type Role } from './auth.js';
 import { loginPage, dashboardPage, errorPage } from './views.js';
 import en from './locales/en.json' with { type: 'json' };
+import { addCareRoutes } from './care-routes.js';
+import { interfaceLanguage, rememberLanguage } from './interface-language.js';
+import { getCopy } from './i18n.js';
 
 interface AccountRow { id: number; secret_hash: string; session_version: number }
 
@@ -35,26 +38,33 @@ export async function createApp(db: Database, config: AppConfig): Promise<Hono<A
   app.use('*', async (c, next) => {
     c.header('Cache-Control', 'no-store');
     c.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    const language = interfaceLanguage(c);
+    const copy = getCopy(language);
+    if (c.req.method === 'GET' && ['en', 'ha'].includes(c.req.query('lang') ?? '')) {
+      rememberLanguage(c, language, config.secureCookies);
+    }
     if (!['GET', 'HEAD', 'OPTIONS'].includes(c.req.method) && c.req.header('Origin') !== config.origin) {
       if (c.req.header('Accept')?.includes('text/html')) {
         if (c.req.path === '/auth/staff' || c.req.path === '/auth/mother') {
           const kind = c.req.path === '/auth/mother' ? 'mother' : 'staff';
-          return c.html(loginPage({ kind, error: en.security.origin }), 403);
+          return c.html(loginPage({ kind, language, error: copy.security.origin }), 403);
         }
-        return c.html(errorPage(403, en.security.origin), 403);
+        return c.html(errorPage(403, copy.security.origin, language), 403);
       }
-      return c.json({ error: en.security.origin }, 403);
+      return c.json({ error: copy.security.origin }, 403);
     }
     await next();
   });
-  app.use('*', bodyLimit({ maxSize: 4096, onError: c => c.json({ error: en.security.tooLarge }, 413) }));
+  app.use('*', bodyLimit({ maxSize: 32 * 1024, onError: c => c.json({ error: getCopy(interfaceLanguage(c)).security.tooLarge }, 413) }));
+  app.use('/auth/*', bodyLimit({ maxSize: 4096, onError: c => c.json({ error: getCopy(interfaceLanguage(c)).security.tooLarge }, 413) }));
   app.use('*', identify(db, config));
-  app.get('/health', c => c.json({ status: 'ok', stage: 1, fictionalDataOnly: true }));
+  app.get('/health', c => c.json({ status: 'ok', stage: 2, fictionalDataOnly: true }));
   app.get('/', c => c.redirect(c.get('principal') ? homeFor(c.get('principal')!.role) : '/login', 303));
   app.get('/login', c => {
     if (c.get('principal')) return c.redirect(homeFor(c.get('principal')!.role), 303);
-    return c.html(loginPage({ kind: c.req.query('kind') === 'mother' ? 'mother' : 'staff',
-      notice: c.req.query('notice') === 'signed-out' ? en.security.signedOut : undefined }));
+    const language = interfaceLanguage(c);
+    return c.html(loginPage({ kind: c.req.query('kind') === 'mother' ? 'mother' : 'staff', language,
+      notice: c.req.query('notice') === 'signed-out' ? getCopy(language).security.signedOut : undefined }));
   });
 
   for (const type of ['staff', 'mother'] as const) {
@@ -73,17 +83,19 @@ export async function createApp(db: Database, config: AppConfig): Promise<Hono<A
     const acceptLogin = db.prepare(`UPDATE ${table} SET failed_attempts = 0, locked_until = 0
       WHERE ${eligible} RETURNING ${staff ? 'role' : "'mother'"} AS role, session_version`);
     app.post(`/auth/${type}`, async c => {
-      if (!c.req.header('Content-Type')?.startsWith('application/x-www-form-urlencoded')) return c.json({ error: en.security.invalidForm }, 400);
+      const language = interfaceLanguage(c);
+      const messages = getCopy(language).security;
+      if (!c.req.header('Content-Type')?.startsWith('application/x-www-form-urlencoded')) return c.json({ error: messages.invalidForm }, 400);
       const body = await c.req.parseBody();
       const rawIdentifier = body[type === 'staff' ? 'identifier' : 'maternalId'];
       const password = body[type === 'staff' ? 'password' : 'pin'];
       if (typeof rawIdentifier !== 'string' || typeof password !== 'string' || rawIdentifier.length > 150 || password.length > 256 || !rawIdentifier.trim() || !password) {
-        return c.html(loginPage({ kind: type, error: en.security.invalidForm }), 400);
+        return c.html(loginPage({ kind: type, language, error: messages.invalidForm }), 400);
       }
       const identifier = type === 'mother' ? rawIdentifier.trim().toUpperCase() : rawIdentifier.trim().toLowerCase();
       const throttleKey = `${type}:${identifier}`;
       const startedAt = Date.now();
-      if (!throttle.allow(throttleKey, startedAt)) return c.html(loginPage({ kind: type, error: en.security.rateLimited }), 429);
+      if (!throttle.allow(throttleKey, startedAt)) return c.html(loginPage({ kind: type, language, error: messages.rateLimited }), 429);
       // Direct contacts take priority. Old demo names alias only the original seed IDs.
       const account = (lookup.get({ identifier }) ??
         (staff ? legacyDemoAccount.get(identifier) : undefined)) as AccountRow | undefined;
@@ -102,13 +114,14 @@ export async function createApp(db: Database, config: AppConfig): Promise<Hono<A
           recordFailure.run(now + 5 * 60 * 1000, ...conditions);
         }
       }
-      return c.html(loginPage({ kind: type, error: en.security.invalidCredentials }), 401);
+      return c.html(loginPage({ kind: type, language, error: messages.invalidCredentials }), 401);
     });
   }
 
   app.post('/auth/logout', c => {
     const user = c.get('principal');
     if (user) {
+      if (user.role === 'mother') rememberLanguage(c, user.language === 'ha' ? 'ha' : 'en', config.secureCookies);
       const table = user.type === 'staff' ? 'users' : 'mothers';
       db.prepare(`UPDATE ${table} SET session_version = session_version + 1 WHERE id = ?`).run(user.id);
     }
@@ -148,22 +161,32 @@ export async function createApp(db: Database, config: AppConfig): Promise<Hono<A
     });
   }
 
-  for (const role of ['admin', 'health_worker', 'provider', 'mother'] as const) {
+  addCareRoutes(app, db, config);
+  for (const role of ['admin', 'health_worker', 'provider'] as const) {
     app.get(homeFor(role), c => {
       const user = c.get('principal');
-      if (!user) return c.redirect(`/login?kind=${role === 'mother' ? 'mother' : 'staff'}`, 303);
-      if (user.role !== role) return c.html(errorPage(403, en.security.forbidden), 403);
+      const language = interfaceLanguage(c);
+      if (!user) return c.redirect('/login?kind=staff', 303);
+      if (user.role !== role) return c.html(errorPage(403, getCopy(language).security.forbidden, language), 403);
       const count = (query: string, ...values: (number | string)[]) => (db.prepare(query).get(...values) as { count: number }).count;
       const stats = role === 'admin'
         ? { facilities: count('SELECT COUNT(*) AS count FROM facilities'), staff: count('SELECT COUNT(*) AS count FROM users WHERE active = 1'), mothers: count('SELECT COUNT(*) AS count FROM mothers') }
         : { facilities: 1, staff: 0, mothers: role === 'health_worker' ? count('SELECT COUNT(*) AS count FROM mothers WHERE registered_facility_id = ?', user.facilityId) : 0 };
       const adminDirectory = role === 'admin' ? directory() : {};
-      return c.html(dashboardPage({ role, name: user.name, facilityName: user.facilityName, maternalId: user.maternalId,
+      return c.html(dashboardPage({ role, language, name: user.name, facilityName: user.facilityName,
         stats, ...adminDirectory } as Parameters<typeof dashboardPage>[0]));
     });
   }
   app.get('/dashboard', c => c.redirect(c.get('principal') ? homeFor(c.get('principal')!.role) : '/login', 303));
-  app.notFound(c => c.req.path.startsWith('/api/') ? c.json({ error: en.security.notFound }, 404) : c.html(errorPage(404, en.security.notFound), 404));
-  app.onError((_error, c) => c.req.path.startsWith('/api/') ? c.json({ error: en.security.serverError }, 500) : c.html(errorPage(500, en.security.serverError), 500));
+  app.notFound(c => {
+    const language = interfaceLanguage(c);
+    const message = getCopy(language).security.notFound;
+    return c.req.path.startsWith('/api/') ? c.json({ error: message }, 404) : c.html(errorPage(404, message, language), 404);
+  });
+  app.onError((_error, c) => {
+    const language = interfaceLanguage(c);
+    const message = getCopy(language).security.serverError;
+    return c.req.path.startsWith('/api/') ? c.json({ error: message }, 500) : c.html(errorPage(500, message, language), 500);
+  });
   return app;
 }

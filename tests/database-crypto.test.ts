@@ -1,6 +1,7 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { openDatabase, migrate, ensureMigrated } from '../src/db.js';
 import { generateSeedSecrets, generateSeedSettings, seedDatabase, seedSecretsFromEnv } from '../src/seed.js';
 import { hashSecret, verifySecret, signSession, verifySession } from '../src/crypto.js';
@@ -22,7 +23,7 @@ test('migration creates exactly the six requested business tables and is repeata
 test('normal startup upgrades original staff names while preserving records and credentials', async () => {
   const original = openDatabase(':memory:');
   try {
-    migrate(original);
+    original.exec(readFileSync('migrations/001_initial.sql', 'utf8'));
     await seedDatabase(original, credentials);
     original.exec("UPDATE users SET email = replace(email, '@tafiyaruwa.test', '@nextkind.test'); PRAGMA user_version = 1;");
     const before = original.prepare('SELECT * FROM users ORDER BY id').all();
@@ -30,8 +31,10 @@ test('normal startup upgrades original staff names while preserving records and 
     ensureMigrated(original);
     const after = original.prepare('SELECT * FROM users ORDER BY id').all();
     assert.deepEqual(after.map(row => ({ ...row })), before.map(row => ({ ...row, email: String(row.email).replace('@nextkind.test', '@tafiyaruwa.test') })));
-    assert.deepEqual(original.prepare('SELECT * FROM mothers ORDER BY id').all(), mothersBefore);
-    assert.equal((original.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 2);
+    const upgradedMothers = original.prepare('SELECT * FROM mothers ORDER BY id').all();
+    assert.deepEqual(upgradedMothers.map(({ registered_by, request_key, registration_digest, ...legacy }) => legacy),
+      mothersBefore.map(row => ({ ...row })));
+    assert.equal((original.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 3);
     ensureMigrated(original);
     assert.deepEqual(original.prepare('SELECT * FROM users ORDER BY id').all(), after);
   } finally { original.close(); }
@@ -40,7 +43,7 @@ test('normal startup upgrades original staff names while preserving records and 
 test('staff rename preserves custom contacts and conflicting accounts', async () => {
   const original = openDatabase(':memory:');
   try {
-    migrate(original);
+    original.exec(readFileSync('migrations/001_initial.sql', 'utf8'));
     await seedDatabase(original, credentials);
     original.exec("UPDATE users SET email = replace(email, '@tafiyaruwa.test', '@nextkind.test'); PRAGMA user_version = 1;");
     original.prepare('UPDATE users SET email = ? WHERE id = 3').run('personal@example.test');

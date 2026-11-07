@@ -146,3 +146,55 @@ footer .icon { height: 16px; width: 16px; }
   .stats dt, th, td { font-size: .82rem; overflow-wrap: anywhere; }
   .account dl > div { grid-template-columns: 1fr; gap: .2rem; }
 }
+
+.care-workspace, .mother-space { max-width: 48rem; overflow-wrap: anywhere; }
+.care-toolbar { display: flex; align-items: center; justify-content: space-between; gap: .8rem; flex-wrap: wrap; margin-bottom: 1.2rem; }
+.care-toolbar > a { display: inline-flex; align-items: center; min-height: 44px; }
+.language-switch { display: inline-flex; align-items: center; gap: .15rem; padding: .15rem; border: 1px solid var(--line); background: #fff; border-radius: .6rem; margin: 0; }
+.workspace > .language-switch { margin-bottom: 1rem; }
+.login-card .language-switch { margin: -.25rem 0 .9rem; }
+.language-switch a, .language-switch button { display: inline-grid; place-items: center; min-width: 4rem; min-height: 44px; padding: .35rem .65rem; border: 0; border-radius: .45rem; background: transparent; color: var(--green); font-size: .88rem; text-decoration: none; }
+.language-switch [aria-current="true"], .language-switch [aria-pressed="true"] { background: #deeadc; font-weight: 650; }
+.workspace-actions { display: grid; margin-top: 1.2rem; align-items: start; gap: .2rem; }
+.action-link { display: inline-flex; gap: 1rem; justify-self: start; color: white; text-decoration: none; }
+.open-form { display: grid; gap: .8rem; width: 100%; max-width: 45rem; }
+.open-form h2, .care-form h2 { margin: 0; }
+.open-form button, .care-form .primary { justify-self: start; }
+.care-form { display: grid; gap: 1rem; }
+.care-form > small { margin-top: -.5rem; }
+.care-form fieldset { min-width: 0; margin: .25rem 0 0; border: 0; border-top: 1px solid var(--line); padding: .65rem 0 0; }
+.care-form legend { padding-right: .8rem; font-weight: 650; }
+.form-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 1rem; }
+.field select, .field textarea { font: inherit; width: 100%; min-height: 48px; border: 1px solid #85998a; border-radius: .5rem; background: #fff; color: var(--ink); padding: .6rem .8rem; }
+.field textarea { resize: vertical; }
+.field { min-width: 0; }
+.field select:focus-visible, .field textarea:focus-visible { outline: 3px solid #35744b; outline-offset: 3px; }
+.care-form .primary { gap: 1rem; }
+.consent-option { display: flex; gap: .7rem; align-items: flex-start; line-height: 1.5; cursor: pointer; }
+.consent-option input { flex: none; width: 1.3rem; height: 1.3rem; margin: .12rem 0 0; accent-color: var(--green); }
+.message ul { padding-left: 1.2rem; }
+.care-form .message { margin: 0; }
+.identity > div { display: flex; flex-wrap: wrap; gap: .6rem 1rem; justify-content: space-between; align-items: baseline; }
+.identity .maternal-id { font-size: 1.35rem; }
+.identity details, .visit-entry { margin-top: .7rem; }
+.record-data { display: grid; gap: .65rem; }
+.record-data > div { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1.4fr); gap: .6rem; align-items: baseline; }
+.record-data dt { color: var(--muted); }
+.record-data dd { font-weight: 550; }
+.clinic-notes { white-space: pre-wrap; }
+.mother-name { margin: .5rem 0 1.2rem; }
+.appointment-card { padding: clamp(1.2rem, 4vw, 2.3rem); border-radius: 1rem; background: var(--green); color: #fff; }
+.appointment-card h2 { color: #d8edc6; font-size: 1rem; line-height: 1.4; letter-spacing: 0; }
+.appointment-card p { color: inherit; }
+.appointment-card .appointment-date { margin: .7rem 0; font-size: clamp(1.85rem, 6vw, 3rem); font-weight: 650; line-height: 1.2; letter-spacing: -.035em; }
+.appointment-facility { display: flex; align-items: center; gap: .45rem; }
+.appointment-card .appointment-note { margin-top: .8rem; color: #deebdf; }
+.empty-appointment { font-size: 1.4rem; font-weight: 600; margin: .6rem 0; }
+.past-appointments { list-style: none; padding: 0; }
+.past-appointments li { display: grid; padding: .8rem 0; gap: .12rem; }
+.past-appointments li + li { border-top: 1px solid var(--line); }
+@media (max-width: 38rem) {
+  .form-grid { grid-template-columns: 1fr; }
+  .care-form .primary { width: 100%; }
+  .record-data > div { grid-template-columns: 1fr; gap: .1rem; }
+}
