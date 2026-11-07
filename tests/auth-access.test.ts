@@ -44,9 +44,9 @@ before(async () => {
   await seedDatabase(db, credentials);
   app = await createApp(db, config);
   const accounts = [
-    ['admin', 'admin@nextkind.test', credentials.adminPassword, '/admin'],
-    ['health_worker', 'worker@nextkind.test', credentials.workerPassword, '/worker'],
-    ['provider', 'provider@nextkind.test', credentials.providerPassword, '/provider'],
+    ['admin', 'admin@tafiyaruwa.test', credentials.adminPassword, '/admin'],
+    ['health_worker', 'worker@tafiyaruwa.test', credentials.workerPassword, '/worker'],
+    ['provider', 'provider@tafiyaruwa.test', credentials.providerPassword, '/provider'],
   ];
   for (const [role, identifier, password, destination] of accounts) {
     const response = await post('/auth/staff', { identifier: identifier!, password: password! });
@@ -134,8 +134,8 @@ test('staff workspaces do not expose patient records before audited look-up exis
 
 test('credential errors are generic for known, unknown and injection-shaped identifiers', async () => {
   const wrongPassword = randomBytes(24).toString('hex');
-  const known = await post('/auth/staff', { identifier: 'worker2@nextkind.test', password: wrongPassword });
-  const unknown = await post('/auth/staff', { identifier: 'absent@nextkind.test', password: wrongPassword });
+  const known = await post('/auth/staff', { identifier: 'worker2@tafiyaruwa.test', password: wrongPassword });
+  const unknown = await post('/auth/staff', { identifier: 'absent@tafiyaruwa.test', password: wrongPassword });
   const injection = await post('/auth/staff', { identifier: "' OR 1=1 --", password: wrongPassword });
   assert.equal(known.status, 401);
   assert.equal(unknown.status, 401);
@@ -144,8 +144,75 @@ test('credential errors are generic for known, unknown and injection-shaped iden
   assert.equal(known.headers.get('set-cookie'), null);
 });
 
+test('the four original staff emails remain aliases for their renamed demo accounts', async () => {
+  const accounts = [
+    ['admin', credentials.adminPassword, '/admin'],
+    ['worker', credentials.workerPassword, '/worker'],
+    ['provider', credentials.providerPassword, '/provider'],
+    ['worker2', credentials.worker2Password, '/worker'],
+  ];
+  for (const [name, password, destination] of accounts) {
+    for (const domain of ['nextkind.test', 'tafiyaruwa.test']) {
+      const response = await post('/auth/staff', { identifier: `${name}@${domain}`, password: password! });
+      assert.equal(response.status, 303);
+      assert.equal(response.headers.get('location'), destination);
+    }
+  }
+});
+
+test('legacy aliases cannot access changed contacts or another account with a demo address', async () => {
+  db.prepare('UPDATE users SET email = ? WHERE id = 2').run('personal@example.test');
+  try {
+    assert.equal((await post('/auth/staff', { identifier: 'worker@nextkind.test', password: credentials.workerPassword })).status, 401);
+    db.prepare(`INSERT INTO users(id, role, name, email, password_hash, facility_id)
+      SELECT 99, 'health_worker', 'Custom Demonstration Account', 'worker@tafiyaruwa.test', password_hash, 2
+      FROM users WHERE id = 4`).run();
+    assert.equal((await post('/auth/staff', { identifier: 'worker@nextkind.test', password: credentials.worker2Password })).status, 401);
+    const direct = await post('/auth/staff', { identifier: 'worker@tafiyaruwa.test', password: credentials.worker2Password });
+    assert.equal(direct.status, 303);
+    const profile = await request('/api/session', { headers: { cookie: cookieFrom(direct) } });
+    assert.equal((await profile.json()).name, 'Custom Demonstration Account');
+    db.prepare('UPDATE users SET email = ? WHERE id = 99').run('worker@nextkind.test');
+    db.prepare('UPDATE users SET email = ? WHERE id = 2').run('worker@tafiyaruwa.test');
+    const claimedLegacy = await post('/auth/staff', { identifier: 'worker@nextkind.test', password: credentials.worker2Password });
+    assert.equal(claimedLegacy.status, 303);
+    const legacyProfile = await request('/api/session', { headers: { cookie: cookieFrom(claimedLegacy) } });
+    assert.equal((await legacyProfile.json()).name, 'Custom Demonstration Account');
+  } finally {
+    db.prepare('DELETE FROM users WHERE id = 99').run();
+    db.prepare('UPDATE users SET email = ? WHERE id = 2').run('worker@tafiyaruwa.test');
+  }
+});
+
+test('browser sign-in and sign-out forms retain their origin for native form submissions', async () => {
+  for (const kind of ['mother', 'staff']) {
+    const page = await request(`/login?kind=${kind}`);
+    assert.equal(page.headers.get('referrer-policy'), 'same-origin');
+    assert.ok((await page.text()).includes(`action="/auth/${kind}"`));
+    const reopened = await request(`/auth/${kind}`);
+    assert.equal(reopened.status, 303);
+    assert.equal(reopened.headers.get('location'), `/login?kind=${kind}`);
+  }
+  const dashboard = await authenticated('/mother', 'mother');
+  assert.equal(dashboard.headers.get('referrer-policy'), 'same-origin');
+  assert.ok((await dashboard.text()).includes('action="/auth/logout"'));
+});
+
+test('a browser with a hidden form origin can retry safely from the mother sign-in page', async () => {
+  const rejected = await request('/auth/mother', {
+    method: 'POST', headers: { origin: 'null', accept: 'text/html' },
+    body: new URLSearchParams({ maternalId: 'MC-7KQ4XM', pin: credentials.motherPins[0]! }),
+  });
+  assert.equal(rejected.status, 403);
+  assert.equal(rejected.headers.get('set-cookie'), null);
+  assert.equal(rejected.headers.get('referrer-policy'), 'same-origin');
+  const page = await rejected.text();
+  assert.ok(page.includes('action="/auth/mother"'));
+  assert.ok(!page.includes(credentials.motherPins[0]!));
+});
+
 test('cross-origin, missing-origin and malformed login submissions are rejected', async () => {
-  const fields = { identifier: 'admin@nextkind.test', password: credentials.adminPassword };
+  const fields = { identifier: 'admin@tafiyaruwa.test', password: credentials.adminPassword };
   assert.equal((await post('/auth/staff', fields, undefined, 'https://untrusted.example')).status, 403);
   assert.equal((await request('/auth/staff', { method: 'POST', body: new URLSearchParams(fields) })).status, 403);
   assert.equal((await request('/auth/staff', {
@@ -156,17 +223,17 @@ test('cross-origin, missing-origin and malformed login submissions are rejected'
 });
 
 test('session cookies are HttpOnly and SameSite Strict, and production cookies are Secure', async () => {
-  const response = await post('/auth/staff', { identifier: 'worker2@nextkind.test', password: credentials.worker2Password });
+  const response = await post('/auth/staff', { identifier: 'worker2@tafiyaruwa.test', password: credentials.worker2Password });
   assert.equal(response.status, 303);
   const cookie = response.headers.get('set-cookie') ?? '';
   assert.match(cookie, /HttpOnly/i);
   assert.match(cookie, /SameSite=Strict/i);
   assert.match(cookie, /Path=\//i);
-  const httpsConfig = { ...config, origin: 'https://demo.nextkind.test', secureCookies: true };
+  const httpsConfig = { ...config, origin: 'https://demo.tafiyaruwa.test', secureCookies: true };
   const httpsApp = await createApp(db, httpsConfig);
   const httpsResponse = await httpsApp.request(new Request(`${httpsConfig.origin}/auth/staff`, {
     method: 'POST', headers: { origin: httpsConfig.origin, 'content-type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ identifier: 'worker2@nextkind.test', password: credentials.worker2Password }),
+    body: new URLSearchParams({ identifier: 'worker2@tafiyaruwa.test', password: credentials.worker2Password }),
   }));
   assert.equal(httpsResponse.status, 303);
   const secureCookie = httpsResponse.headers.get('set-cookie') ?? '';
@@ -184,14 +251,14 @@ test('tampered and expired cookies cannot authenticate', async () => {
 });
 
 test('server reads current roles and account activation on every request', async () => {
-  db.prepare('UPDATE users SET role = ? WHERE email = ?').run('provider', 'worker@nextkind.test');
+  db.prepare('UPDATE users SET role = ? WHERE email = ?').run('provider', 'worker@tafiyaruwa.test');
   assert.equal((await authenticated('/api/worker/workspace', 'health_worker')).status, 403);
   assert.equal((await authenticated('/api/provider/workspace', 'health_worker')).status, 200);
-  db.prepare('UPDATE users SET role = ? WHERE email = ?').run('health_worker', 'worker@nextkind.test');
-  db.prepare('UPDATE users SET active = 0 WHERE email = ?').run('provider@nextkind.test');
+  db.prepare('UPDATE users SET role = ? WHERE email = ?').run('health_worker', 'worker@tafiyaruwa.test');
+  db.prepare('UPDATE users SET active = 0 WHERE email = ?').run('provider@tafiyaruwa.test');
   assert.equal((await authenticated('/api/session', 'provider')).status, 401);
-  assert.equal((await post('/auth/staff', { identifier: 'provider@nextkind.test', password: credentials.providerPassword })).status, 401);
-  db.prepare('UPDATE users SET active = 1 WHERE email = ?').run('provider@nextkind.test');
+  assert.equal((await post('/auth/staff', { identifier: 'provider@tafiyaruwa.test', password: credentials.providerPassword })).status, 401);
+  db.prepare('UPDATE users SET active = 1 WHERE email = ?').run('provider@tafiyaruwa.test');
 });
 
 test('signing out revokes a copied session cookie, not only the browser cookie', async () => {
@@ -221,7 +288,7 @@ test('five simultaneous wrong PINs lock the account until expiry', async () => {
 });
 
 test('repeated successful sign-ins do not use up the guessing limit', async () => {
-  const fields = { identifier: 'admin@nextkind.test', password: credentials.adminPassword };
+  const fields = { identifier: 'admin@tafiyaruwa.test', password: credentials.adminPassword };
   for (let i = 0; i < 13; i++) {
     assert.equal((await post('/auth/staff', fields)).status, 303);
   }

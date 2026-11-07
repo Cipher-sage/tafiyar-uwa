@@ -54,10 +54,10 @@ export function generateSeedSecrets(): SeedSecrets {
 
 export async function seedDatabase(db: Database, secrets: SeedSecrets): Promise<void> {
   const staff = [
-    [1, 'admin', 'Demo Administrator', 'admin@nextkind.test', secrets.adminPassword, 3],
-    [2, 'health_worker', 'Demo Health Worker', 'worker@nextkind.test', secrets.workerPassword, 1],
-    [3, 'provider', 'Demo Hospital Doctor', 'provider@nextkind.test', secrets.providerPassword, 3],
-    [4, 'health_worker', 'Demo Health Worker Two', 'worker2@nextkind.test', secrets.worker2Password, 2],
+    [1, 'admin', 'Demo Administrator', 'admin@tafiyaruwa.test', secrets.adminPassword, 3],
+    [2, 'health_worker', 'Demo Health Worker', 'worker@tafiyaruwa.test', secrets.workerPassword, 1],
+    [3, 'provider', 'Demo Hospital Doctor', 'provider@tafiyaruwa.test', secrets.providerPassword, 3],
+    [4, 'health_worker', 'Demo Health Worker Two', 'worker2@tafiyaruwa.test', secrets.worker2Password, 2],
   ] as const;
   const mothers = [
     ['MC-7KQ4XM', 'Demo Mother A', 26, 'ha', '2027-02-15', 1, 1],

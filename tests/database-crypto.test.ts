@@ -19,6 +19,44 @@ test('migration creates exactly the six requested business tables and is repeata
   assert.deepEqual(tables.map(row => row.name), ['access_logs', 'facilities', 'mothers', 'sms_outbox', 'users', 'visits']);
 });
 
+test('normal startup upgrades original staff names while preserving records and credentials', async () => {
+  const original = openDatabase(':memory:');
+  try {
+    migrate(original);
+    await seedDatabase(original, credentials);
+    original.exec("UPDATE users SET email = replace(email, '@tafiyaruwa.test', '@nextkind.test'); PRAGMA user_version = 1;");
+    const before = original.prepare('SELECT * FROM users ORDER BY id').all();
+    const mothersBefore = original.prepare('SELECT * FROM mothers ORDER BY id').all();
+    ensureMigrated(original);
+    const after = original.prepare('SELECT * FROM users ORDER BY id').all();
+    assert.deepEqual(after.map(row => ({ ...row })), before.map(row => ({ ...row, email: String(row.email).replace('@nextkind.test', '@tafiyaruwa.test') })));
+    assert.deepEqual(original.prepare('SELECT * FROM mothers ORDER BY id').all(), mothersBefore);
+    assert.equal((original.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 2);
+    ensureMigrated(original);
+    assert.deepEqual(original.prepare('SELECT * FROM users ORDER BY id').all(), after);
+  } finally { original.close(); }
+});
+
+test('staff rename preserves custom contacts and conflicting accounts', async () => {
+  const original = openDatabase(':memory:');
+  try {
+    migrate(original);
+    await seedDatabase(original, credentials);
+    original.exec("UPDATE users SET email = replace(email, '@tafiyaruwa.test', '@nextkind.test'); PRAGMA user_version = 1;");
+    original.prepare('UPDATE users SET email = ? WHERE id = 3').run('personal@example.test');
+    original.prepare(`INSERT INTO users(id, role, name, email, password_hash, facility_id)
+      SELECT 99, 'health_worker', 'Custom Demonstration Account', 'worker@tafiyaruwa.test', password_hash, 2
+      FROM users WHERE id = 4`).run();
+    ensureMigrated(original);
+    const email = (id: number) => original.prepare('SELECT email FROM users WHERE id = ?').get(id)?.email;
+    assert.equal(email(1), 'admin@tafiyaruwa.test');
+    assert.equal(email(2), 'worker@nextkind.test');
+    assert.equal(email(3), 'personal@example.test');
+    assert.equal(email(4), 'worker2@tafiyaruwa.test');
+    assert.equal(email(99), 'worker@tafiyaruwa.test');
+  } finally { original.close(); }
+});
+
 test('seed is idempotent and preserves existing account credentials', async () => {
   const before = db.prepare('SELECT password_hash FROM users ORDER BY id').all();
   const pinsBefore = db.prepare('SELECT pin_hash, session_version FROM mothers ORDER BY id').all();
@@ -78,7 +116,7 @@ test('database stores salted credential hashes rather than passwords or PINs', a
     assert.ok(await verifySecret(credentials.motherPins[i]!, row.pin_hash), 'individual PIN verifies for the intended account');
   }
   assert.equal(new Set(mothers.map(row => row.pin_hash)).size, mothers.length, 'each mother PIN receives an independent salt');
-  const admin = users.find(row => row.email === 'admin@nextkind.test')!;
+  const admin = users.find(row => row.email === 'admin@tafiyaruwa.test')!;
   assert.ok(await verifySecret(credentials.adminPassword, admin.password_hash), 'seed password hash verifies');
 });
 

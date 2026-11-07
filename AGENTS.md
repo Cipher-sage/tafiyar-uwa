@@ -1,4 +1,4 @@
-# Maternal Continuity System — NextKind
+# Tafiyar Uwa
 
 1. Use fictional patient data only. Never real people.
 2. No passwords or keys in the code. Use an `.env` file.

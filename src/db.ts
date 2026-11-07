@@ -15,9 +15,12 @@ export function migrate(db: Database, migrationsDirectory = resolve('migrations'
   db.exec('BEGIN IMMEDIATE');
   try {
     const current = db.prepare('PRAGMA user_version').get() as { user_version: number };
-    if (current.user_version > 1) throw new Error('Database schema is newer than this app.');
+    if (current.user_version > 2) throw new Error('Database schema is newer than this app.');
     if (current.user_version === 0) {
       db.exec(readFileSync(resolve(migrationsDirectory, '001_initial.sql'), 'utf8'));
+    }
+    if (current.user_version < 2) {
+      db.exec(readFileSync(resolve(migrationsDirectory, '002_rename_demo_staff.sql'), 'utf8'));
     }
     db.exec('COMMIT');
   } catch (error) {
@@ -28,5 +31,6 @@ export function migrate(db: Database, migrationsDirectory = resolve('migrations'
 
 export function ensureMigrated(db: Database): void {
   const current = db.prepare('PRAGMA user_version').get() as { user_version: number };
-  if (current.user_version !== 1) throw new Error('Database is not ready. Run npm run db:migrate and npm run db:seed.');
+  if (current.user_version === 1) migrate(db);
+  else if (current.user_version !== 2) throw new Error('Database is not ready. Run npm run db:migrate and npm run db:seed.');
 }

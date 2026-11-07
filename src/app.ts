@@ -16,17 +16,33 @@ export async function createApp(db: Database, config: AppConfig): Promise<Hono<A
   const app = new Hono<AppEnv>();
   const dummyHash = await hashSecret(randomBytes(32).toString('hex'));
   const throttle = new LoginThrottle();
+  const legacyDemoAccount = db.prepare(`WITH demo(id, old_email, new_email) AS (
+      VALUES (1, 'admin@nextkind.test', 'admin@tafiyaruwa.test'),
+             (2, 'worker@nextkind.test', 'worker@tafiyaruwa.test'),
+             (3, 'provider@nextkind.test', 'provider@tafiyaruwa.test'),
+             (4, 'worker2@nextkind.test', 'worker2@tafiyaruwa.test')
+    ) SELECT users.id, users.password_hash AS secret_hash, users.session_version
+      FROM users JOIN demo ON users.id = demo.id AND users.email = demo.new_email
+      WHERE demo.old_email = ?`);
   app.use('*', secureHeaders({
     contentSecurityPolicy: {
       defaultSrc: ["'self'"], scriptSrc: ["'self'"], styleSrc: ["'self'"],
       imgSrc: ["'self'", 'data:'], fontSrc: ["'self'"], connectSrc: ["'self'"],
       objectSrc: ["'none'"], frameAncestors: ["'none'"], baseUri: ["'none'"], formAction: ["'self'"],
-    }, referrerPolicy: 'no-referrer', xFrameOptions: 'DENY',
+    // A native form POST needs its same-origin Origin header for the check below.
+    }, referrerPolicy: 'same-origin', xFrameOptions: 'DENY',
   }));
   app.use('*', async (c, next) => {
     c.header('Cache-Control', 'no-store');
     c.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
     if (!['GET', 'HEAD', 'OPTIONS'].includes(c.req.method) && c.req.header('Origin') !== config.origin) {
+      if (c.req.header('Accept')?.includes('text/html')) {
+        if (c.req.path === '/auth/staff' || c.req.path === '/auth/mother') {
+          const kind = c.req.path === '/auth/mother' ? 'mother' : 'staff';
+          return c.html(loginPage({ kind, error: en.security.origin }), 403);
+        }
+        return c.html(errorPage(403, en.security.origin), 403);
+      }
       return c.json({ error: en.security.origin }, 403);
     }
     await next();
@@ -42,6 +58,7 @@ export async function createApp(db: Database, config: AppConfig): Promise<Hono<A
   });
 
   for (const type of ['staff', 'mother'] as const) {
+    app.get(`/auth/${type}`, c => c.redirect(`/login?kind=${type}`, 303));
     const staff = type === 'staff';
     const table = staff ? 'users' : 'mothers';
     const hashColumn = staff ? 'password_hash' : 'pin_hash';
@@ -67,7 +84,9 @@ export async function createApp(db: Database, config: AppConfig): Promise<Hono<A
       const throttleKey = `${type}:${identifier}`;
       const startedAt = Date.now();
       if (!throttle.allow(throttleKey, startedAt)) return c.html(loginPage({ kind: type, error: en.security.rateLimited }), 429);
-      const account = lookup.get({ identifier }) as AccountRow | undefined;
+      // Direct contacts take priority. Old demo names alias only the original seed IDs.
+      const account = (lookup.get({ identifier }) ??
+        (staff ? legacyDemoAccount.get(identifier) : undefined)) as AccountRow | undefined;
       const matches = await verifySecret(password, account?.secret_hash ?? dummyHash);
       const now = Date.now();
       if (account) {

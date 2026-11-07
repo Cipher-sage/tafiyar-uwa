@@ -1,8 +1,8 @@
 {
-  "brand": "NextKind",
+  "brand": "Tafiyar Uwa",
   "product": "Maternal Continuity",
-  "pageTitle": "Maternal Continuity · NextKind",
-  "metaDescription": "NextKind’s fictional maternal care demonstration in Gombe State.",
+  "pageTitle": "Tafiyar Uwa · Maternal Continuity",
+  "metaDescription": "Sign in to Tafiyar Uwa, a fictional maternal care demonstration in Gombe State.",
   "skipLink": "Skip to main content",
   "demoLabel": "Fictional data only",
   "region": "Gombe State, Nigeria",
@@ -32,9 +32,9 @@
     "submitting": "Signing in…",
     "demoGuide": "Need a demo account?",
     "demoGuideDescription": "Ask the person running the demo for the password or PIN that goes with one of these accounts.",
-    "adminAccount": "Administrator · admin@nextkind.test",
-    "workerAccount": "Health worker · worker@nextkind.test",
-    "providerAccount": "Hospital provider · provider@nextkind.test",
+    "adminAccount": "Administrator · admin@tafiyaruwa.test",
+    "workerAccount": "Health worker · worker@tafiyaruwa.test",
+    "providerAccount": "Hospital provider · provider@tafiyaruwa.test",
     "motherAccount": "Mother · MC-7KQ4XM"
   },
   "roles": {

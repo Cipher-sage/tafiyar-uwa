@@ -1,6 +1,6 @@
-# NextKind Maternal Continuity
+# Tafiyar Uwa
 
-A fictional antenatal care demo for the USPF Changemaker Challenge in Gombe State, Nigeria. Step 1 lets clinic staff and mothers sign in and checks what each person can see. The pilot scenario connects two primary health centres and Gombe Referral Hospital.
+Tafiyar Uwa means “a mother’s journey” in Hausa. This antenatal care demo for the USPF Changemaker Challenge connects two fictional primary health centres and a referral hospital in Gombe State, Nigeria. Step 1 lets clinic staff and mothers sign in and checks what each person can see.
 
 ## Run it locally
 
@@ -18,14 +18,14 @@ To test or run the compiled app, use `npm run check` followed by `npm start`. Th
 
 ## Try each role
 
-Choose **Clinic team** for staff or **Mother** for a maternal account. Read the matching password or PIN from `.env` on your computer. The names in the last column below are settings, not credentials to type into the form.
+Choose **Clinic team** for staff or **Mother** for a maternal account. Look up the setting in the last column in your local `.env` file and enter its value as your password or PIN. If you used an earlier version of the demo, your original `@nextkind.test` staff sign-in also works with the same password.
 
 | Account | Identifier | Credential setting |
 | --- | --- | --- |
-| Health worker at Community Health Centre | `worker@nextkind.test` | `SEED_WORKER_PASSWORD` |
-| Health worker at Riverside Health Centre | `worker2@nextkind.test` | `SEED_WORKER2_PASSWORD` |
-| Provider at Gombe Referral Hospital | `provider@nextkind.test` | `SEED_PROVIDER_PASSWORD` |
-| Administrator | `admin@nextkind.test` | `SEED_ADMIN_PASSWORD` |
+| Health worker at Community Health Centre | `worker@tafiyaruwa.test` | `SEED_WORKER_PASSWORD` |
+| Health worker at Riverside Health Centre | `worker2@tafiyaruwa.test` | `SEED_WORKER2_PASSWORD` |
+| Provider at Gombe Referral Hospital | `provider@tafiyaruwa.test` | `SEED_PROVIDER_PASSWORD` |
+| Administrator | `admin@tafiyaruwa.test` | `SEED_ADMIN_PASSWORD` |
 | Demo Mother A | `MC-7KQ4XM` | `SEED_MOTHER_PIN` |
 | Demo Mother B | `MC-8RZ5TN` | `SEED_MOTHER_B_PIN` |
 | Demo Mother C | `MC-6VP9KD` | `SEED_MOTHER_C_PIN` |
