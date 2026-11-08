@@ -205,3 +205,43 @@ footer .icon { height: 16px; width: 16px; }
   .care-form .primary { width: 100%; }
   .record-data > div { grid-template-columns: 1fr; gap: .1rem; }
 }
+
+.workspace-link, .simulator-link { display: inline-flex; align-items: center; min-height: 44px; padding: .45rem 0; }
+.simulator-link { margin-top: 1rem; }
+.reminder-panel > p { margin-bottom: .8rem; }
+.reminder-panel form { margin: 1rem 0; }
+.reminder-panel .primary { gap: 1rem; }
+.reminder-preview-label { margin-top: 1rem; font-size: .9rem; font-weight: 600; }
+.reminder-message { margin: .8rem 0 1rem; padding: 1rem; border-left: 3px solid #61845e; background: #f0f5eb; border-radius: 0 .6rem .6rem 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.simulation-note { font-size: .88rem; line-height: 1.6; }
+.simulation-banner { display: inline-block; padding: .3rem .65rem; color: #603d0e; background: #fff0ca; border: 1px solid #d8b66d; border-radius: .4rem; font-size: .8rem; font-weight: 700; letter-spacing: .06em; }
+.outbox-list { list-style: none; margin: 0; padding: 0; }
+.outbox-entry h2 { margin-bottom: .5rem; }
+.simulator-space { max-width: 34rem; overflow-wrap: anywhere; }
+.simulator-heading { text-align: center; }
+.simulator-heading h1 { margin: .85rem 0 .65rem; font-size: clamp(1.6rem, 5vw, 2.2rem); }
+.phone-frame { max-width: 27rem; margin: 1.5rem auto 1rem; border: 12px solid #213d34; border-radius: 2.1rem; padding: .55rem; background: #213d34; box-shadow: 0 12px 30px -20px #172b24; }
+.phone-frame::before { content: ""; display: block; width: 3.5rem; height: .25rem; margin: .15rem auto .8rem; border-radius: 1rem; background: #799184; }
+.phone-screen { padding: clamp(1rem, 4vw, 1.5rem); border-radius: 1rem; background: #f4f6e8; min-width: 0; }
+.phone-screen h2 { font-size: 1.25rem; line-height: 1.3; margin-bottom: 1rem; }
+.phone-screen .login-form { margin-top: 1rem; }
+.phone-options { display: grid; gap: .6rem; }
+.phone-option { display: flex; align-items: center; text-align: left; gap: .75rem; min-height: 48px; width: 100%; padding: .7rem .75rem; border: 1px solid #9eb09b; border-radius: .5rem; background: #fff; color: var(--green); font: inherit; font-weight: 550; text-decoration: none; }
+.phone-option > span { flex: none; min-width: 1.25rem; font-variant-numeric: tabular-nums; font-weight: 750; }
+.phone-option:hover { background: #e7efdf; }
+.phone-result { display: grid; gap: 1rem; }
+.phone-result > p { color: var(--ink); line-height: 1.65; }
+.phone-result .phone-date { font-size: 1.55rem; font-weight: 650; line-height: 1.3; }
+.phone-exit { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--line); }
+.simulator-space > .simulation-note { max-width: 27rem; margin: .7rem auto; }
+.simulator-space > .workspace-link { display: flex; justify-content: center; }
+
+@media (max-width: 28rem) {
+  .site-header { flex-wrap: wrap; }
+  .site-header .brand { min-width: 0; }
+  .panel { min-width: 0; }
+  .panel table { table-layout: fixed; overflow-wrap: anywhere; }
+  .phone-frame { border-width: 8px; padding: .35rem; }
+  .phone-screen { padding: 1rem; }
+  .reminder-panel .primary { width: 100%; }
+}

@@ -10,7 +10,7 @@
 
 ## Delivery stages
 
-Follow `BUILD_BRIEF.md`. Step 3 adds provider lookup by Maternal ID and reason, administrator access logs and offline viewing of the last opened record. Let the team review each completed stage before starting the next. Public hosting is a later stage. Keep the six business tables. Offline record viewing must protect access on shared devices and make the copy’s age visible.
+Follow `BUILD_BRIEF.md`. The public competition demo includes the four delivery stages. Keep the six business tables. Offline viewing must protect access on shared devices and make the copy’s age visible. The basic-phone flow and reminder outbox must be clearly labelled as simulations. Clinical education text needs a traceable source and local clinical and Hausa review before patient use.
 
 ## Repository practices
 

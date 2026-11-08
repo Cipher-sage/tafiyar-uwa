@@ -144,7 +144,7 @@ test('credential errors are generic for known, unknown and injection-shaped iden
   assert.equal(known.headers.get('set-cookie'), null);
 });
 
-test('the four original staff emails remain aliases for their renamed demo accounts', async () => {
+test('staff sign in with their saved email after whitespace and case normalization', async () => {
   const accounts = [
     ['admin', credentials.adminPassword, '/admin'],
     ['worker', credentials.workerPassword, '/worker'],
@@ -152,32 +152,28 @@ test('the four original staff emails remain aliases for their renamed demo accou
     ['worker2', credentials.worker2Password, '/worker'],
   ];
   for (const [name, password, destination] of accounts) {
-    for (const domain of ['nextkind.test', 'tafiyaruwa.test']) {
-      const response = await post('/auth/staff', { identifier: `${name}@${domain}`, password: password! });
+    const email = `${name}@tafiyaruwa.test`;
+    for (const identifier of [email, `  ${email.toUpperCase()}  `]) {
+      const response = await post('/auth/staff', { identifier, password: password! });
       assert.equal(response.status, 303);
       assert.equal(response.headers.get('location'), destination);
     }
   }
 });
 
-test('legacy aliases cannot access changed contacts or another account with a demo address', async () => {
+test('staff sign-in follows the current contact when an address changes ownership', async () => {
   db.prepare('UPDATE users SET email = ? WHERE id = 2').run('personal@example.test');
   try {
-    assert.equal((await post('/auth/staff', { identifier: 'worker@nextkind.test', password: credentials.workerPassword })).status, 401);
+    assert.equal((await post('/auth/staff', { identifier: 'worker@tafiyaruwa.test', password: credentials.workerPassword })).status, 401);
+    assert.equal((await post('/auth/staff', { identifier: 'personal@example.test', password: credentials.workerPassword })).status, 303);
     db.prepare(`INSERT INTO users(id, role, name, email, password_hash, facility_id)
       SELECT 99, 'health_worker', 'Custom Demonstration Account', 'worker@tafiyaruwa.test', password_hash, 2
       FROM users WHERE id = 4`).run();
-    assert.equal((await post('/auth/staff', { identifier: 'worker@nextkind.test', password: credentials.worker2Password })).status, 401);
+    assert.equal((await post('/auth/staff', { identifier: 'worker@tafiyaruwa.test', password: credentials.workerPassword })).status, 401);
     const direct = await post('/auth/staff', { identifier: 'worker@tafiyaruwa.test', password: credentials.worker2Password });
     assert.equal(direct.status, 303);
     const profile = await request('/api/session', { headers: { cookie: cookieFrom(direct) } });
     assert.equal((await profile.json()).name, 'Custom Demonstration Account');
-    db.prepare('UPDATE users SET email = ? WHERE id = 99').run('worker@nextkind.test');
-    db.prepare('UPDATE users SET email = ? WHERE id = 2').run('worker@tafiyaruwa.test');
-    const claimedLegacy = await post('/auth/staff', { identifier: 'worker@nextkind.test', password: credentials.worker2Password });
-    assert.equal(claimedLegacy.status, 303);
-    const legacyProfile = await request('/api/session', { headers: { cookie: cookieFrom(claimedLegacy) } });
-    assert.equal((await legacyProfile.json()).name, 'Custom Demonstration Account');
   } finally {
     db.prepare('DELETE FROM users WHERE id = 99').run();
     db.prepare('UPDATE users SET email = ? WHERE id = 2').run('worker@tafiyaruwa.test');

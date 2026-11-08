@@ -130,13 +130,19 @@
   };
 
   function render(record) {
-    const { record: { mother, visits }, copy: { care, provider }, language } = record;
-    const locale = language === 'ha' ? 'ha-NG' : 'en-NG';
+    const { record: { mother, visits }, copy: { care, provider, dates }, language } = record;
     const date = (value, withTime = false) => {
       if (!value) return care.notRecorded;
-      const options = { dateStyle: 'medium', timeZone: 'Africa/Lagos' };
-      if (withTime) options.timeStyle = 'short';
-      return new Intl.DateTimeFormat(locale, options).format(new Date(value));
+      const parsed = new Date(value);
+      // Calendar dates retain their day; timestamp displays use Gombe's UTC+1.
+      const local = new Date(parsed.getTime() + (withTime ? 60 * 60 * 1000 : 0));
+      if (!Number.isFinite(local.getTime())) return care.notRecorded;
+      // Older, still-valid saved copies have no month dictionary: use ISO dates.
+      const day = dates
+        ? `${local.getUTCDate()} ${dates.shortMonths[local.getUTCMonth()]}${language === 'ha' ? ',' : ''} ${local.getUTCFullYear()}`
+        : local.toISOString().slice(0, 10);
+      const time = `${String(local.getUTCHours()).padStart(2, '0')}:${String(local.getUTCMinutes()).padStart(2, '0')}`;
+      return withTime ? `${day}, ${time}` : day;
     };
     function fields(rows) {
       const list = node('dl', undefined, 'record-data');

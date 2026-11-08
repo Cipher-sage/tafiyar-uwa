@@ -52,21 +52,42 @@ export function generateSeedSecrets(): SeedSecrets {
   return seedSecretsFromEnv(generateSeedSettings());
 }
 
-export async function seedDatabase(db: Database, secrets: SeedSecrets): Promise<void> {
-  const staff = [
-    [1, 'admin', 'Demo Administrator', 'admin@tafiyaruwa.test', secrets.adminPassword, 3],
-    [2, 'health_worker', 'Demo Health Worker', 'worker@tafiyaruwa.test', secrets.workerPassword, 1],
-    [3, 'provider', 'Demo Hospital Doctor', 'provider@tafiyaruwa.test', secrets.providerPassword, 3],
-    [4, 'health_worker', 'Demo Health Worker Two', 'worker2@tafiyaruwa.test', secrets.worker2Password, 2],
-  ] as const;
-  const mothers = [
+const staff = [
+  [1, 'admin', 'Demo Administrator', 'admin@tafiyaruwa.test', 3],
+  [2, 'health_worker', 'Demo Health Worker', 'worker@tafiyaruwa.test', 1],
+  [3, 'provider', 'Demo Hospital Doctor', 'provider@tafiyaruwa.test', 3],
+  [4, 'health_worker', 'Demo Health Worker Two', 'worker2@tafiyaruwa.test', 2],
+] as const;
+const mothers = [
     ['MC-7KQ4XM', 'Demo Mother A', 26, 'ha', '2027-02-15', 1, 1],
     ['MC-8RZ5TN', 'Demo Mother B', 30, 'en', '2027-03-02', 1, 1],
     ['MC-6VP9KD', 'Demo Mother C', 23, 'ha', '2027-01-20', 2, 1],
     ['MC-3HW7SC', 'Demo Mother D', 28, 'en', '2027-04-10', 2, 0],
     ['MC-9BX2RA', 'Demo Mother E', 32, 'ha', '2027-02-28', 1, 1],
   ] as const;
-  const staffHashes = await Promise.all(staff.map(row => hashSecret(row[4])));
+// Both runtimes call this inside their own database transaction.
+export function seedFromHashes(db: Database, hashes: { staff: string[]; mothers: string[] }) {
+  const validHashes = (values: unknown, count: number) => Array.isArray(values) && values.length === count &&
+    values.every(value => typeof value === 'string' && /^scrypt\$32768\$8\$3\$[a-f0-9]{32}\$[a-f0-9]{64}$/.test(value));
+  if (!hashes || !validHashes(hashes.staff, staff.length) || !validHashes(hashes.mothers, mothers.length)) {
+    throw new Error('Invalid demo credential hashes.');
+  }
+  const facility = db.prepare('INSERT INTO facilities(id, name, state) VALUES (?, ?, ?) ON CONFLICT DO NOTHING');
+  facility.run(1, 'Gombe Community Health Centre (Demo)', 'Gombe');
+  facility.run(2, 'Gombe Riverside Health Centre (Demo)', 'Gombe');
+  facility.run(3, 'Gombe Referral Hospital (Demo)', 'Gombe');
+  const user = db.prepare(`INSERT INTO users(id, role, name, email, password_hash, facility_id)
+    VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`);
+  staff.forEach(([id, role, name, email, facilityId], i) => user.run(id, role, name, email, hashes.staff[i]!, facilityId));
+  const mother = db.prepare(`INSERT INTO mothers(id, maternal_id, name, age, pin_hash, language,
+    expected_delivery_date, registered_facility_id, consent_to_share) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT DO NOTHING`);
+  mothers.forEach((row, i) => mother.run(i + 1, row[0], row[1], row[2], hashes.mothers[i]!, row[3], row[4], row[5], row[6]));
+}
+
+export async function seedDatabase(db: Database, secrets: SeedSecrets): Promise<void> {
+  const passwords = [secrets.adminPassword, secrets.workerPassword, secrets.providerPassword, secrets.worker2Password];
+  const staffHashes = await Promise.all(passwords.map(hashSecret));
   const pinHashes = await Promise.all(secrets.motherPins.map(hashSecret));
   // Upgrade only known seed rows that still verify against the legacy shared credential.
   // Compare the same stored hash again at write time to preserve concurrent changes.
@@ -82,21 +103,11 @@ export async function seedDatabase(db: Database, secrets: SeedSecrets): Promise<
   }));
   db.exec('BEGIN IMMEDIATE');
   try {
-    const facility = db.prepare('INSERT INTO facilities(id, name, state) VALUES (?, ?, ?) ON CONFLICT DO NOTHING');
-    facility.run(1, 'Gombe Community Health Centre (Demo)', 'Gombe');
-    facility.run(2, 'Gombe Riverside Health Centre (Demo)', 'Gombe');
-    facility.run(3, 'Gombe Referral Hospital (Demo)', 'Gombe');
-    const user = db.prepare(`INSERT INTO users(id, role, name, email, password_hash, facility_id)
-      VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`);
-    staff.forEach((row, i) => user.run(row[0], row[1], row[2], row[3], staffHashes[i]!, row[5]));
+    seedFromHashes(db, { staff: staffHashes, mothers: pinHashes });
     if (sharedWorkerHash) {
       db.prepare(`UPDATE users SET password_hash = ?, session_version = session_version + 1
         WHERE id = 4 AND email = ? AND password_hash = ?`).run(staffHashes[3]!, staff[3][3], sharedWorkerHash);
     }
-    const mother = db.prepare(`INSERT INTO mothers(id, maternal_id, name, age, pin_hash, language,
-      expected_delivery_date, registered_facility_id, consent_to_share) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT DO NOTHING`);
-    mothers.forEach((row, i) => mother.run(i + 1, row[0], row[1], row[2], pinHashes[i]!, row[3], row[4], row[5], row[6]));
     const rotatePin = db.prepare(`UPDATE mothers SET pin_hash = ?, session_version = session_version + 1
       WHERE id = ? AND maternal_id = ? AND pin_hash = ?`);
     sharedMotherHashes.forEach((previous, i) => {

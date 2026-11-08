@@ -3,12 +3,18 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=24.0.0" },
+  "engines": {
+    "node": ">=24.0.0"
+  },
   "scripts": {
     "setup": "tsx scripts/setup.ts",
     "db:migrate": "tsx scripts/migrate.ts",
     "db:seed": "tsx scripts/seed.ts",
     "dev": "tsx watch src/server.ts",
+    "worker:prepare": "tsx scripts/worker-demo.ts local",
+    "worker:dev": "wrangler dev --local",
+    "worker:deploy": "tsx scripts/worker-demo.ts deploy",
+    "pages:deploy": "wrangler pages deploy --cwd pages --project-name tafiyar-uwa --branch main",
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/src/server.js",
     "typecheck": "tsc --noEmit",
@@ -21,8 +27,10 @@
     "hono": "^4.10.0"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261108.1",
     "@types/node": "^24.10.0",
     "tsx": "^4.20.0",
-    "typescript": "^5.9.0"
+    "typescript": "^5.9.0",
+    "wrangler": "^4.158.0"
   }
 }

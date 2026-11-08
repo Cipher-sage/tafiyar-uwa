@@ -1,8 +1,9 @@
 import { html } from 'hono/html';
 import copy from './locales/en.json' with { type: 'json' };
-import { formatDate, getCopy, type Language } from './i18n.js';
+import { formatDate, formatTimestamp, getCopy, type Language } from './i18n.js';
 import type { MotherRecord, VisitRecord } from './care.js';
 import type { listAccessLogs } from './provider.js';
+import type { listReminderOutbox } from './reminders.js';
 
 type Markup = ReturnType<typeof html>;
 type Role = keyof typeof copy.roles;
@@ -93,6 +94,7 @@ export function loginPage({ kind, error, notice, language = 'en' }: { kind: 'sta
       </form><details><summary>${t.demoGuide}</summary><p>${t.demoGuideDescription}</p>
         <ul>${(isMother ? [t.motherAccount] : [t.workerAccount, t.providerAccount, t.adminAccount])
             .map(account => html`<li>${account}</li>`)}</ul></details>
+      <a class="simulator-link" href="/simulator?lang=${language}">${copy.simulator.open}</a>
     </section></main>`, heading, language);
 }
 
@@ -137,9 +139,13 @@ export function dashboardPage(props: DashboardProps) {
       <h1>${title}</h1><p>${intro}</p></div>
     ${props.role === 'health_worker' ? html`<section class="workspace-actions">
       <a class="primary action-link" href="/worker/register">${copy.care.register}${icon('arrow')}</a>
+      <a class="workspace-link" href="/worker/outbox?lang=${language}">${copy.reminder.title}</a>
       ${openForm(language)}</section>` : ''}
-    ${props.role === 'admin' ? html`<a class="primary action-link" href="/admin/access-logs?lang=${language}">
-      ${copy.provider.auditTitle}${icon('arrow')}</a>${adminDirectory(props)}` : accountDetails(props)}
+    ${props.role === 'admin' ? html`<nav class="workspace-actions" aria-label="${t.adminTitle}">
+      <a class="primary action-link" href="/admin/access-logs?lang=${language}">
+      ${copy.provider.auditTitle}${icon('arrow')}</a>
+      <a class="workspace-link" href="/admin/outbox?lang=${language}">${copy.reminder.title}</a>
+      </nav>${adminDirectory(props)}` : accountDetails(props)}
     <footer><span>${icon('lock')}${t.sharedDevice}</span><span>${copy.demoLabel}</span></footer>
     </main>`, title, language);
 }
@@ -276,6 +282,9 @@ export function workerRecordPage({requestKey,facilityName,record,today,values = 
   const c = getCopy(language), t = c.care;
   const m = record.mother;
   const path = `/worker/mothers/${encodeURIComponent(m.maternalId)}`;
+  const nextAppointment = record.visits[0]?.nextAppointment;
+  const canRemind = nextAppointment && nextAppointment >= today;
+  const reminderLanguage = m.language === 'ha' ? 'ha' : 'en';
   return layout(html`${header(true, language)}<main id="main" class="workspace care-workspace">
     ${careHeading(language, m.name, facilityName, path)}
     ${notice ? html`<div class="message success" role="status">${notice}</div>` : ''}
@@ -298,7 +307,17 @@ export function workerRecordPage({requestKey,facilityName,record,today,values = 
         maxlength="1000" rows="3">${values.notes ?? ''}</textarea></div>
       ${formInput({name:'nextAppointment',label:t.nextAppointment,type:'date',value:values.nextAppointment})}
       <button type="submit" class="primary">${t.saveVisit}${icon('arrow')}</button>
-    </form>${visitHistory(record.visits, language)}</main>`,t.motherRecord, language);
+    </form>
+    <section class="panel reminder-panel"><h2>${c.reminder.send}</h2><p>${c.reminder.intro}</p>
+      ${canRemind ? html`<p class="reminder-preview-label">${c.reminder.preview}</p>
+        <blockquote class="reminder-message" lang="${reminderLanguage}">${getCopy(reminderLanguage).reminder.message.replace('{date}', formatDate(nextAppointment, reminderLanguage))}</blockquote>`
+        : html`<p class="message">${nextAppointment ? c.reminder.pastAppointment : c.reminder.noAppointment}</p>`}
+      <form method="post" action="${path}/reminders">
+        <input type="hidden" name="requestKey" value="${requestKey}">
+        <button type="submit" class="primary" ${!canRemind ? 'disabled' : ''}>${c.reminder.send}${icon('arrow')}</button>
+      </form><p class="simulation-note">${c.reminder.simulationHint}</p>
+      <a class="workspace-link" href="/worker/outbox?lang=${language}">${c.reminder.title}</a>
+    </section>${visitHistory(record.visits, language)}</main>`,t.motherRecord, language);
 }
 
 export function motherAppointmentsPage({name,maternalId,facilityName,language,today,appointments,notice}: {
@@ -327,14 +346,13 @@ export function motherAppointmentsPage({name,maternalId,facilityName,language,to
     ${appointments.history.length ? html`<section class="panel"><h2>${t.previousPlans}</h2><p>${t.previousHint}</p>
       <ul class="past-appointments">${appointments.history.map(item => html`<li><strong>${dateText(item.nextAppointment,language)}</strong>
         <span>${item.facilityName}</span><small>${t.setOn} ${dateText(item.visitDate,language)}</small></li>`)}</ul></section>` : ''}
+    <a class="simulator-link" href="/simulator?lang=${language}">${c.simulator.open}</a>
     <footer><span>${icon('lock')}${c.dashboard.sharedDevice}</span><span>${c.demoLabel}</span></footer>
     </main>`,t.appointments,language);
 }
 
 function timestampText(value: string, language: Language) {
-  const formatted = new Intl.DateTimeFormat(language === 'ha' ? 'ha-NG' : 'en-NG', {
-    dateStyle: 'medium', timeStyle: 'short', timeZone: 'Africa/Lagos', hour12: false,
-  }).format(new Date(value));
+  const formatted = formatTimestamp(value, language);
   return html`<time datetime="${value}">${formatted}</time>`;
 }
 
@@ -376,7 +394,7 @@ export function providerRecordPage({record, reason, openedAt, expiresAt, session
         ({visitDate,weeksPregnant,bloodPressure,weight,notes,nextAppointment,facilityName})),
     },
     reason, openedAt, expiresAt, sessionKey, offlineGrant, language, facilityName,
-    copy: {care: t, provider: p, dashboard: c.dashboard, roles: c.roles, brand: c.brand},
+    copy: {care: t, provider: p, dashboard: c.dashboard, roles: c.roles, brand: c.brand, dates: c.dates},
   };
   return layout(html`${header(true, language)}<main class="workspace care-workspace" id="main">
     <div class="care-toolbar"><a href="/provider">${p.back}</a>
@@ -428,4 +446,100 @@ export function adminAccessLogsPage({logs, language}: {logs: ReturnType<typeof l
       <span aria-current="page">${p.page} ${logs.page}</span>
       ${logs.hasNext ? html`<a rel="next" href="${path}?page=${logs.page + 1}&amp;lang=${language}">${p.next}</a>` : ''}
     </nav>` : ''}</main>`,p.auditTitle,language);
+}
+
+export function simulatorPage({stage, language, error, appointments, today}: {
+  stage: 'language' | 'login' | 'menu' | 'appointment' | 'tip';
+  language: Language;
+  error?: string;
+  appointments?: {next: Appointment | null};
+  today?: string;
+}) {
+  const copy = getCopy(language);
+  const t = copy.simulator;
+  const signedIn = stage === 'menu' || stage === 'appointment' || stage === 'tip';
+  const headings = {language: t.chooseLanguage, login: t.signIn, menu: t.menu, appointment: t.appointment, tip: t.tipTitle};
+  const next = appointments?.next;
+  return layout(html`${header(false, language)}<main class="workspace simulator-space" id="main">
+    <div class="simulator-heading"><span class="simulation-banner">${t.badge}</span>
+      <h1>${t.title}</h1><p>${t.intro}</p></div>
+    <section class="phone-frame" aria-labelledby="phone-heading">
+      <div class="phone-screen"><h2 id="phone-heading">${headings[stage]}</h2>
+        ${error ? html`<div class="message error" role="alert">${error}</div>` : ''}
+        ${stage === 'language' ? html`<nav class="phone-options" aria-label="${t.chooseLanguage}">
+          <a class="phone-option" href="/simulator/login?lang=en" lang="en"><span>1</span>${copy.care.english}</a>
+          <a class="phone-option" href="/simulator/login?lang=ha" lang="ha"><span>2</span>${copy.care.hausa}</a>
+        </nav>` : ''}
+        ${stage === 'login' ? html`<p>${t.loginHint}</p>
+          <form class="login-form" method="post" action="/auth/mother?returnTo=simulator&amp;lang=${language}" data-login-form>
+            <div class="field"><label for="simulator-id">${copy.login.maternalIdLabel}</label>
+              <input id="simulator-id" name="maternalId" type="text" maxlength="16" required
+                autocomplete="username" autocapitalize="characters" spellcheck="false"
+                placeholder="${copy.login.maternalIdPlaceholder}" aria-describedby="simulator-id-hint">
+              <small id="simulator-id-hint">${copy.login.maternalIdHint}</small></div>
+            ${secretField(true, language)}
+            <button class="primary" type="submit" data-submitting="${copy.login.submitting}"><span>${t.continue}</span>${icon('arrow')}</button>
+          </form><a class="workspace-link" href="/simulator?lang=${language}">${t.changeLanguage}</a>` : ''}
+        ${stage === 'menu' ? html`<nav class="phone-options" aria-label="${t.menu}">
+          <a class="phone-option" href="/simulator/appointment?lang=${language}"><span>1</span>${t.appointment}</a>
+          <a class="phone-option" href="/simulator/tip?lang=${language}"><span>2</span>${t.tipTitle}</a>
+          <a class="phone-option" href="/simulator?lang=${language}"><span>3</span>${t.changeLanguage}</a>
+        </nav>` : ''}
+        ${stage === 'appointment' ? html`<div class="phone-result">
+          ${next ? html`<p class="phone-date">${dateText(next.nextAppointment, language)}</p>
+            <p>${next.facilityName}</p>
+            ${today && next.nextAppointment < today ? html`<p class="message">${copy.care.pastAppointment}</p>` : ''}`
+            : html`<p>${copy.care.noAppointment}</p><p>${copy.care.noAppointmentHint}</p>`}
+        </div>` : ''}
+        ${stage === 'tip' ? html`<div class="phone-result">
+          <section><h3>${t.visitTipHeading}</h3><p>${t.visitTip}</p>
+            <a href="https://www.who.int/activities/promoting-healthy-pregnancy/promoting-healthy-pregnancy" target="_blank" rel="noopener noreferrer">${t.visitSource}</a></section>
+          <section><h3>${t.foodTipHeading}</h3><p>${t.foodTip}</p>
+            <a href="https://www.who.int/tools/elena/interventions/nutrition-counselling-pregnancy" target="_blank" rel="noopener noreferrer">${t.foodSource}</a></section>
+          <p class="simulation-note">${t.tipReview}</p>
+        </div>` : ''}
+        ${stage === 'appointment' || stage === 'tip' ? html`<a class="workspace-link" href="/simulator/menu?lang=${language}">${t.back}</a>` : ''}
+        ${signedIn ? html`<form class="phone-exit" method="post" action="/auth/logout?returnTo=simulator">
+          <button type="submit" class="phone-option"><span>0</span>${t.exit}</button></form>` : ''}
+      </div>
+    </section>
+    <p class="simulation-note">${t.simulationHint}</p>
+    ${!signedIn ? html`<a class="workspace-link" href="/login?kind=mother&amp;lang=${language}">${t.return}</a>`
+      : html`<p class="simulation-note">${copy.dashboard.sharedDevice}</p>`}
+  </main>`, t.title, language);
+}
+
+export function reminderOutboxPage({outbox, language, role, notice}: {
+  outbox: ReturnType<typeof listReminderOutbox>;
+  language: Language;
+  role: 'admin' | 'health_worker';
+  notice?: string;
+}) {
+  const copy = getCopy(language);
+  const t = copy.reminder;
+  const home = role === 'admin' ? '/admin' : '/worker';
+  const path = home + '/outbox';
+  return layout(html`${header(true, language)}<main class="workspace care-workspace" id="main">
+    <div class="care-toolbar"><a href="${home}">${t.back}</a>${languageLinks(language, path + '?page=' + outbox.page)}</div>
+    <div class="workspace-heading"><span class="simulation-banner">${t.simulation}</span>
+      <h1>${t.title}</h1><p>${t.simulationHint}</p></div>
+    ${notice ? html`<div class="message success" role="status">${notice}</div>` : ''}
+    ${outbox.entries.length ? html`<ol class="outbox-list">${outbox.entries.map(entry => html`
+      <li class="panel outbox-entry"><h2>${entry.motherName}</h2>
+        <p class="maternal-id">${entry.maternalId}</p>
+        <blockquote class="reminder-message" lang="${entry.language ?? language}">${entry.message}</blockquote>
+        <dl class="record-data">
+          <div><dt>${t.status}</dt><dd>${t.simulation}</dd></div>
+          <div><dt>${t.createdAt}</dt><dd>${timestampText(entry.createdAt, language)}</dd></div>
+          <div><dt>${t.createdBy}</dt><dd>${entry.staffName ?? copy.care.notRecorded}</dd></div>
+          <div><dt>${copy.care.clinic}</dt><dd>${entry.facilityName ?? copy.care.notRecorded}</dd></div>
+          <div><dt>${t.language}</dt><dd>${entry.language ? entry.language === 'ha' ? copy.care.hausa : copy.care.english : copy.care.notRecorded}</dd></div>
+          ${entry.appointmentDate ? html`<div><dt>${copy.care.nextAppointment}</dt><dd>${dateText(entry.appointmentDate, language)}</dd></div>` : ''}
+        </dl></li>`)}</ol>` : html`<p class="panel">${t.empty}</p>`}
+    ${outbox.hasPrevious || outbox.hasNext ? html`<nav class="audit-pagination" aria-label="${t.pagination}">
+      ${outbox.hasPrevious ? html`<a rel="prev" href="${path}?page=${outbox.page - 1}&amp;lang=${language}">${t.previous}</a>` : ''}
+      <span aria-current="page">${t.page} ${outbox.page}</span>
+      ${outbox.hasNext ? html`<a rel="next" href="${path}?page=${outbox.page + 1}&amp;lang=${language}">${t.next}</a>` : ''}
+    </nav>` : ''}
+  </main>`, t.title, language);
 }

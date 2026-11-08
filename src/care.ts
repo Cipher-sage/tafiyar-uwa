@@ -129,6 +129,7 @@ function readVisit(input: FormInput) {
 
 // Keep each access check, read or write, and audit entry together. Never await inside this transaction.
 export function transaction<T>(db: Database, work: () => T): T {
+  if (db.transactionSync) return db.transactionSync(work);
   db.exec('BEGIN IMMEDIATE');
   try {
     const result = work();

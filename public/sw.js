@@ -1,7 +1,7 @@
 'use strict';
 
 // Only this patient-free shell and its public assets may enter Cache Storage.
-const cacheName = 'tafiyar-provider-shell-v3';
+const cacheName = 'tafiyar-provider-shell-v5';
 const shellPath = '/offline';
 const publicFiles = new Set([shellPath, '/assets/offline.js', '/assets/app.css']);
 

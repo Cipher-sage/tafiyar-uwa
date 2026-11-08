@@ -2,6 +2,9 @@ node_modules/
 dist/
 .env
 .env.*
+.dev.vars
+.dev.vars.*
+.wrangler/
 !.env.example
 data/
 *.sqlite
