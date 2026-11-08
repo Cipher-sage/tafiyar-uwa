@@ -44,9 +44,9 @@ before(async () => {
   await seedDatabase(db, credentials);
   app = await createApp(db, config);
   const accounts = [
-    ['admin', 'admin@tafiyaruwa.test', credentials.adminPassword, '/admin'],
-    ['health_worker', 'worker@tafiyaruwa.test', credentials.workerPassword, '/worker'],
-    ['provider', 'provider@tafiyaruwa.test', credentials.providerPassword, '/provider'],
+    ['admin', 'admin', credentials.adminPassword, '/admin'],
+    ['health_worker', 'worker', credentials.workerPassword, '/worker'],
+    ['provider', 'provider', credentials.providerPassword, '/provider'],
   ];
   for (const [role, identifier, password, destination] of accounts) {
     const response = await post('/auth/staff', { identifier: identifier!, password: password! });
@@ -116,7 +116,13 @@ test('public responses and role APIs never expose password hashes or PINs', asyn
     const text = await response.text();
     assert.ok(!text.includes('scrypt$'), `${path} contains no hash`);
     assert.ok(!/password_hash|pin_hash/.test(text), `${path} contains no secret database fields`);
-    for (const secret of Object.values(credentials).flat()) assert.ok(!text.includes(secret), `${path} contains no raw credential`);
+    if (path.startsWith('/api/')) {
+      assert.doesNotMatch(text, /"(?:password|pin|secret)"\s*:/i);
+      for (const secret of Object.values(credentials).flat()) assert.ok(!text.includes(JSON.stringify(secret)), `${path} contains no PIN value`);
+    } else {
+      const field = text.match(/<input\b[^>]*\btype="password"[^>]*>/i)?.[0];
+      assert.ok(field && !/\bvalue="[^"]+"/.test(field), 'the sign-in PIN field must be empty');
+    }
     assert.ok(!text.includes(config.sessionSecret), `${path} contains no signing key`);
   }
 });
@@ -144,7 +150,7 @@ test('credential errors are generic for known, unknown and injection-shaped iden
   assert.equal(known.headers.get('set-cookie'), null);
 });
 
-test('staff sign in with their saved email after whitespace and case normalization', async () => {
+test('staff sign in with their one-word username or saved email after normalization', async () => {
   const accounts = [
     ['admin', credentials.adminPassword, '/admin'],
     ['worker', credentials.workerPassword, '/worker'],
@@ -153,7 +159,8 @@ test('staff sign in with their saved email after whitespace and case normalizati
   ];
   for (const [name, password, destination] of accounts) {
     const email = `${name}@tafiyaruwa.test`;
-    for (const identifier of [email, `  ${email.toUpperCase()}  `]) {
+    const username = name === 'worker2' ? 'riverside' : name!;
+    for (const identifier of [email, `  ${username.toUpperCase()}  `]) {
       const response = await post('/auth/staff', { identifier, password: password! });
       assert.equal(response.status, 303);
       assert.equal(response.headers.get('location'), destination);
@@ -164,11 +171,13 @@ test('staff sign in with their saved email after whitespace and case normalizati
 test('staff sign-in follows the current contact when an address changes ownership', async () => {
   db.prepare('UPDATE users SET email = ? WHERE id = 2').run('personal@example.test');
   try {
+    assert.equal((await post('/auth/staff', { identifier: 'worker', password: credentials.workerPassword })).status, 401);
     assert.equal((await post('/auth/staff', { identifier: 'worker@tafiyaruwa.test', password: credentials.workerPassword })).status, 401);
     assert.equal((await post('/auth/staff', { identifier: 'personal@example.test', password: credentials.workerPassword })).status, 303);
     db.prepare(`INSERT INTO users(id, role, name, email, password_hash, facility_id)
       SELECT 99, 'health_worker', 'Custom Demonstration Account', 'worker@tafiyaruwa.test', password_hash, 2
       FROM users WHERE id = 4`).run();
+    assert.equal((await post('/auth/staff', { identifier: 'worker', password: credentials.worker2Password })).status, 401);
     assert.equal((await post('/auth/staff', { identifier: 'worker@tafiyaruwa.test', password: credentials.workerPassword })).status, 401);
     const direct = await post('/auth/staff', { identifier: 'worker@tafiyaruwa.test', password: credentials.worker2Password });
     assert.equal(direct.status, 303);
@@ -195,16 +204,17 @@ test('browser sign-in and sign-out forms retain their origin for native form sub
 });
 
 test('a browser with a hidden form origin can retry safely from the mother sign-in page', async () => {
+  const submitted = randomBytes(20).toString('hex');
   const rejected = await request('/auth/mother', {
     method: 'POST', headers: { origin: 'null', accept: 'text/html' },
-    body: new URLSearchParams({ maternalId: 'MC-7KQ4XM', pin: credentials.motherPins[0]! }),
+    body: new URLSearchParams({ maternalId: 'MC-7KQ4XM', pin: submitted }),
   });
   assert.equal(rejected.status, 403);
   assert.equal(rejected.headers.get('set-cookie'), null);
   assert.equal(rejected.headers.get('referrer-policy'), 'same-origin');
   const page = await rejected.text();
   assert.ok(page.includes('action="/auth/mother"'));
-  assert.ok(!page.includes(credentials.motherPins[0]!));
+  assert.ok(!page.includes(submitted));
 });
 
 test('cross-origin, missing-origin and malformed login submissions are rejected', async () => {
@@ -268,7 +278,7 @@ test('signing out revokes a copied session cookie, not only the browser cookie',
 
 test('five simultaneous wrong PINs lock the account until expiry', async () => {
   const correctPin = credentials.motherPins[4]!;
-  const wrongPin = String((Number(correctPin) + 1) % 100_000_000).padStart(8, '0');
+  const wrongPin = String((Number(correctPin) + 1) % 10_000).padStart(4, '0');
   const attempts = await Promise.all(Array.from({ length: 5 }, () =>
     post('/auth/mother', { maternalId: 'MC-9BX2RA', pin: wrongPin })));
   for (const response of attempts) assert.equal(response.status, 401);

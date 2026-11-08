@@ -3,6 +3,7 @@ import { randomBytes, randomInt, randomUUID } from 'node:crypto';
 import { after, before, test } from 'node:test';
 import { createApp } from '../src/app.js';
 import { getMotherAppointments } from '../src/care.js';
+import { verifySecret } from '../src/crypto.js';
 import { migrate, openDatabase } from '../src/db.js';
 import { generateMaternalId } from '../src/maternal-id.js';
 import { generateSeedSecrets, seedDatabase } from '../src/seed.js';
@@ -47,7 +48,7 @@ async function formKey(path: string, cookie: string) {
 }
 
 function registration(requestKey: string) {
-  const pin = String(randomInt(10_000_000, 100_000_000));
+  const pin = String(randomInt(1000)).padStart(4, '0'); // Exercise leading-zero PINs.
   return {
     name: 'Fictional Clinic Tester', age: '27', language: 'ha', expectedDeliveryDate: '',
     phone: '', pin, pinConfirm: pin, requestKey,
@@ -67,9 +68,9 @@ before(async () => {
   app = await createApp(db, {
     origin, sessionSecret: randomBytes(48).toString('hex'), secureCookies: false, sessionSeconds: 1800,
   });
-  worker = await signIn('/auth/staff', { identifier: 'worker@tafiyaruwa.test', password: credentials.workerPassword });
-  otherWorker = await signIn('/auth/staff', { identifier: 'worker2@tafiyaruwa.test', password: credentials.worker2Password });
-  provider = await signIn('/auth/staff', { identifier: 'provider@tafiyaruwa.test', password: credentials.providerPassword });
+  worker = await signIn('/auth/staff', { identifier: 'worker', password: credentials.workerPassword });
+  otherWorker = await signIn('/auth/staff', { identifier: 'riverside', password: credentials.worker2Password });
+  provider = await signIn('/auth/staff', { identifier: 'provider', password: credentials.providerPassword });
 });
 after(() => db.close());
 
@@ -88,7 +89,7 @@ test('registration preserves an optional consent decision, hashes the PIN and sa
   const maternalId = path.split('/').at(-1)!;
   const row = db.prepare('SELECT pin_hash, consent_to_share, registered_facility_id FROM mothers WHERE maternal_id = ?').get(maternalId)!;
   assert.ok(typeof row.pin_hash === 'string' && row.pin_hash.startsWith('scrypt$'));
-  assert.ok(!String(row.pin_hash).includes(fields.pin));
+  assert.ok(await verifySecret(fields.pin, String(row.pin_hash)));
   assert.equal(row.consent_to_share, 0);
   assert.equal(row.registered_facility_id, 1);
   assert.equal((await post(url, { ...fields, name: 'Different Fictional Mother' }, worker)).status, 409);
@@ -104,7 +105,13 @@ test('invalid or cross-site registration cannot create a record or echo its PIN'
   assert.equal((await post('/worker/register', fields, worker, 'https://untrusted.example')).status, 403);
   const response = await post('/worker/register', { ...fields, pinConfirm: '', expectedDeliveryDate: '2026-02-31' }, worker);
   assert.ok([400, 422].includes(response.status));
-  assert.ok(!(await response.text()).includes(fields.pin));
+  const inputs = (await response.text()).match(/<input\b[^>]*\btype="password"[^>]*>/gi) ?? [];
+  assert.equal(inputs.length, 2);
+  for (const input of inputs) assert.doesNotMatch(input, /\bvalue="[^"]+"/);
+  for (const invalid of [fields.pin.slice(1), fields.pin + '0', 'a' + fields.pin.slice(1)]) {
+    const result = await post('/worker/register', { ...fields, pin: invalid, pinConfirm: invalid }, worker);
+    assert.ok([400, 422].includes(result.status));
+  }
   assert.equal(countMothers(), before);
 });
 
@@ -173,7 +180,8 @@ test('a registered mother sees her clinic appointment in both languages and no p
   assert.match(english, /<html\s+lang="en"/);
   assert.ok(english.includes(maternalId) && !english.includes('MC-7KQ4XM'));
   assert.ok(english.includes(values.nextAppointment));
-  assert.ok(!english.includes(values.notes) && !english.includes(values.bloodPressure) && !english.includes(fields.pin));
+  assert.ok(!english.includes(values.notes) && !english.includes(values.bloodPressure));
+  assert.doesNotMatch(english.replace(/<[^>]*>/g, ' '), new RegExp(`\\b${fields.pin}\\b`));
   assert.equal(db.prepare('SELECT language FROM mothers WHERE id = ?').get(internalId)!.language, 'en');
   assert.equal(db.prepare('SELECT language FROM mothers WHERE id = 1').get()!.language, 'ha');
   assert.equal((await post('/mother/language', { language: 'ha' }, own)).status, 303);

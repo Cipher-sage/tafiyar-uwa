@@ -51,7 +51,7 @@ async function startLocalApp() {
 async function signIn(page, role) {
   await page.goto(origin + '/login');
   const form = page.locator('form[action^="/auth/staff"]');
-  await form.locator('[name=identifier]').fill(role + '@tafiyaruwa.test');
+  await form.locator('[name=identifier]').fill(role);
   await form.locator('[name=password]').fill(passwords[role]);
   await form.locator('button[type=submit]').click();
   await page.waitForURL(url => url.pathname === '/' + role);
@@ -87,7 +87,7 @@ try {
   await worker.locator('a[href="/worker/register"]').click();
   await assertFits(worker);
   const signup = worker.locator('form[action="/worker/register"]');
-  const pin = String(randomInt(10_000_000, 100_000_000));
+  const pin = String(randomInt(10_000)).padStart(4, '0');
   await signup.locator('[name=name]').fill('Fictional Demo Check');
   await signup.locator('[name=age]').fill('27');
   await signup.locator('[name=language]').selectOption('ha');

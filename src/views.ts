@@ -56,14 +56,13 @@ function layout(body: Markup, title: string, language: Language = 'en') {
 
 function secretField(isMother: boolean, language: Language) {
   const t = getCopy(language).login;
-  const show = isMother ? t.showPin : t.showPassword;
-  return html`<div class="field"><label for="secret">${isMother ? t.pinLabel : t.passwordLabel}</label>
+  return html`<div class="field"><label for="secret">${t.pinLabel}</label>
     <div class="secret-input"><input id="secret" name="${isMother ? 'pin' : 'password'}" type="password"
-      autocomplete="current-password" inputmode="${isMother ? 'numeric' : 'text'}"
+      autocomplete="current-password" inputmode="numeric"
       maxlength="${isMother ? 12 : 256}" required>
       <button type="button" hidden data-reveal="secret" data-show="${t.showSecret}" data-hide="${t.hideSecret}"
-        data-show-label="${show}" data-hide-label="${isMother ? t.hidePin : t.hidePassword}"
-        aria-label="${show}" aria-pressed="false">${t.showSecret}</button></div></div>`;
+        data-show-label="${t.showPin}" data-hide-label="${t.hidePin}"
+        aria-label="${t.showPin}" aria-pressed="false">${t.showSecret}</button></div></div>`;
 }
 
 export function loginPage({ kind, error, notice, language = 'en' }: { kind: 'staff' | 'mother'; error?: string; notice?: string; language?: Language }) {
@@ -88,11 +87,14 @@ export function loginPage({ kind, error, notice, language = 'en' }: { kind: 'sta
             autocapitalize="characters" spellcheck="false" maxlength="150" placeholder="${t.maternalIdPlaceholder}"
             aria-describedby="id-hint" required><small id="id-hint">${t.maternalIdHint}</small>`
             : html`<input id="identifier" name="identifier" type="text" autocomplete="username"
-            autocapitalize="none" spellcheck="false" maxlength="150" required>`}</div>
+            autocapitalize="none" spellcheck="false" maxlength="150" placeholder="worker" list="demo-usernames" required>
+            <datalist id="demo-usernames"><option value="worker">${t.workerAccount}</option>
+              <option value="riverside">${t.riversideAccount}</option><option value="provider">${t.providerAccount}</option>
+              <option value="admin">${t.adminAccount}</option></datalist>`}</div>
         ${secretField(isMother, language)}<button class="primary" type="submit" data-submitting="${t.submitting}">
           <span>${t.submit}</span>${icon('arrow')}</button>
       </form><details><summary>${t.demoGuide}</summary><p>${t.demoGuideDescription}</p>
-        <ul>${(isMother ? [t.motherAccount] : [t.workerAccount, t.providerAccount, t.adminAccount])
+        <ul>${(isMother ? [t.motherAccount] : [t.workerAccount, t.riversideAccount, t.providerAccount, t.adminAccount])
             .map(account => html`<li>${account}</li>`)}</ul></details>
       <a class="simulator-link" href="/simulator?lang=${language}">${copy.simulator.open}</a>
     </section></main>`, heading, language);
@@ -241,8 +243,8 @@ export function registrationPage({requestKey, facilityName, values = {}, errors,
           <option value="ha" ${preferred === 'ha' ? 'selected' : ''}>${t.hausa}</option>
           <option value="en" ${preferred === 'en' ? 'selected' : ''}>${t.english}</option></select></div>
       </div><fieldset><legend>${t.access}</legend><div class="form-grid">
-        ${formInput({name:'pin',label:t.pin,required:true,type:'password',inputmode:'numeric',pattern:'[0-9]{8,12}',maxlength:12})}
-        ${formInput({name:'pinConfirm',label:t.pinConfirm,required:true,type:'password',inputmode:'numeric',pattern:'[0-9]{8,12}',maxlength:12})}
+        ${formInput({name:'pin',label:t.pin,required:true,type:'password',inputmode:'numeric',pattern:'[0-9]{4}',maxlength:4})}
+        ${formInput({name:'pinConfirm',label:t.pinConfirm,required:true,type:'password',inputmode:'numeric',pattern:'[0-9]{4}',maxlength:4})}
       </div></fieldset>
       <label class="consent-option"><input type="checkbox" name="consentToShare" value="on"
         ${values.consentToShare === 'on' ? 'checked' : ''} aria-describedby="consent-hint"><span>${t.consent}</span></label>

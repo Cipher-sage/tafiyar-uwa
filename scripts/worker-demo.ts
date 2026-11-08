@@ -3,8 +3,7 @@ import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { parse } from 'dotenv';
-import { hashSecret } from '../src/crypto.js';
-import { generateSeedSettings, seedSecretsFromEnv } from '../src/seed.js';
+import { demoHashes, generateSeedSettings, seedSecretsFromEnv } from '../src/seed.js';
 
 const action = process.argv[2];
 if (action !== 'local' && action !== 'deploy') throw new Error('Choose local or deploy.');
@@ -21,10 +20,9 @@ if (action === 'deploy') {
 const settings = parse(readFileSync(file));
 const credentials = seedSecretsFromEnv(settings);
 if (!settings.SESSION_SECRET || settings.SESSION_SECRET.length < 48) throw new Error('Missing session secret in ' + file);
-const staff = [credentials.adminPassword, credentials.workerPassword, credentials.providerPassword, credentials.worker2Password];
 const bindings = {
   SESSION_SECRET: settings.SESSION_SECRET,
-  SEED_HASHES: JSON.stringify({ staff: await Promise.all(staff.map(hashSecret)), mothers: await Promise.all(credentials.motherPins.map(hashSecret)) }),
+  SEED_HASHES: JSON.stringify(await demoHashes(credentials, settings.DEMO_REGISTERED_PINS)),
 };
 if (action === 'local') {
   writeFileSync('.dev.vars', Object.entries(bindings).map(([key, value]) => key + "='" + value + "'").join('\n') + '\n', { mode: 0o600 });

@@ -1,4 +1,5 @@
-import { randomBytes, randomInt } from 'node:crypto';
+import { randomInt } from 'node:crypto';
+import { demoStaff as staff } from './demo-staff.js';
 import type { Database } from './db.js';
 import { hashSecret, verifySecret } from './crypto.js';
 
@@ -16,12 +17,12 @@ export interface SeedSecrets {
 // Existing local settings take priority when upgrading an earlier demo.
 export function generateSeedSettings(existing: NodeJS.ProcessEnv = {}): Record<string, string> {
   const settings: Record<string, string> = {};
-  for (const key of passwordKeys) settings[key] = existing[key] || randomBytes(18).toString('base64url');
-  const usedPins = new Set(pinKeys.map(key => existing[key]).filter(Boolean));
-  for (const key of pinKeys) {
+  const keys = [...passwordKeys, ...pinKeys];
+  const usedPins = new Set(keys.map(key => existing[key]).filter(pin => pin && /^\d{4}$/.test(pin)));
+  for (const key of keys) {
     let pin = existing[key];
-    if (!pin) {
-      do { pin = String(randomInt(10_000_000, 100_000_000)); } while (usedPins.has(pin));
+    if (!pin || !/^\d{4}$/.test(pin)) {
+      do { pin = String(randomInt(10_000)).padStart(4, '0'); } while (usedPins.has(pin));
       usedPins.add(pin);
     }
     settings[key] = pin;
@@ -32,10 +33,11 @@ export function generateSeedSettings(existing: NodeJS.ProcessEnv = {}): Record<s
 export function seedSecretsFromEnv(env: NodeJS.ProcessEnv = process.env): SeedSecrets {
   const passwords = passwordKeys.map(key => env[key] ?? '');
   const motherPins = pinKeys.map(key => env[key] ?? '');
-  if (passwords.some(value => value.length < 16) || motherPins.some(pin => !/^\d{8,12}$/.test(pin))) {
-    throw new Error('Demo credentials are missing or too short. Run npm run setup.');
+  const all = [...passwords, ...motherPins];
+  if (all.some(pin => !/^\d{4}$/.test(pin))) {
+    throw new Error('Demo accounts require four-digit PINs. Run npm run setup.');
   }
-  if (new Set(passwords).size !== passwords.length || new Set(motherPins).size !== motherPins.length) {
+  if (new Set(all).size !== all.length) {
     throw new Error('Each demo account needs its own credential. Check the local seed settings.');
   }
   const secrets = {
@@ -52,12 +54,6 @@ export function generateSeedSecrets(): SeedSecrets {
   return seedSecretsFromEnv(generateSeedSettings());
 }
 
-const staff = [
-  [1, 'admin', 'Demo Administrator', 'admin@tafiyaruwa.test', 3],
-  [2, 'health_worker', 'Demo Health Worker', 'worker@tafiyaruwa.test', 1],
-  [3, 'provider', 'Demo Hospital Doctor', 'provider@tafiyaruwa.test', 3],
-  [4, 'health_worker', 'Demo Health Worker Two', 'worker2@tafiyaruwa.test', 2],
-] as const;
 const mothers = [
     ['MC-7KQ4XM', 'Demo Mother A', 26, 'ha', '2027-02-15', 1, 1],
     ['MC-8RZ5TN', 'Demo Mother B', 30, 'en', '2027-03-02', 1, 1],
@@ -65,13 +61,47 @@ const mothers = [
     ['MC-3HW7SC', 'Demo Mother D', 28, 'en', '2027-04-10', 2, 0],
     ['MC-9BX2RA', 'Demo Mother E', 32, 'ha', '2027-02-28', 1, 1],
   ] as const;
-// Both runtimes call this inside their own database transaction.
-export function seedFromHashes(db: Database, hashes: { staff: string[]; mothers: string[] }) {
+interface DemoHashes { staff: string[]; mothers: string[]; registered?: Record<string, string>; pinFormat?: number }
+function validateHashes(hashes: DemoHashes) {
   const validHashes = (values: unknown, count: number) => Array.isArray(values) && values.length === count &&
     values.every(value => typeof value === 'string' && /^scrypt\$32768\$8\$3\$[a-f0-9]{32}\$[a-f0-9]{64}$/.test(value));
   if (!hashes || !validHashes(hashes.staff, staff.length) || !validHashes(hashes.mothers, mothers.length)) {
     throw new Error('Invalid demo credential hashes.');
   }
+  for (const [id, hash] of Object.entries(hashes.registered ?? {})) {
+    if (!/^MC-[A-HJ-NP-Z2-9]{6}$/.test(id) || !validHashes([hash], 1)) throw new Error('Invalid registered demo PIN hash.');
+  }
+}
+
+export async function demoHashes(secrets: SeedSecrets, registeredJson = '{}'): Promise<DemoHashes> {
+  const extras: unknown = JSON.parse(registeredJson);
+  if (!extras || typeof extras !== 'object' || Array.isArray(extras)) throw new Error('Invalid registered demo PIN list.');
+  const registered: Record<string, string> = {};
+  for (const [id, pin] of Object.entries(extras)) {
+    if (!/^MC-[A-HJ-NP-Z2-9]{6}$/.test(id) || typeof pin !== 'string' || !/^\d{4}$/.test(pin)) throw new Error('Invalid registered demo PIN.');
+    registered[id] = await hashSecret(pin);
+  }
+  const passwords = [secrets.adminPassword, secrets.workerPassword, secrets.providerPassword, secrets.worker2Password];
+  return { pinFormat: 4, staff: await Promise.all(passwords.map(hashSecret)), mothers: await Promise.all(secrets.motherPins.map(hashSecret)), registered };
+}
+
+// Call inside a transaction, only on an intentional credential reset.
+export function resetDemoPins(db: Database, hashes: DemoHashes) {
+  validateHashes(hashes);
+  const staffPin = db.prepare(`UPDATE users SET password_hash=?, session_version=session_version+1, failed_attempts=0, locked_until=0
+    WHERE id=? AND role=? AND email=? AND facility_id=?`);
+  staff.forEach(([id, role, , email, facility], i) => staffPin.run(hashes.staff[i]!, id, role, email, facility));
+  const motherPin = db.prepare(`UPDATE mothers SET pin_hash=?, session_version=session_version+1, failed_attempts=0, locked_until=0
+    WHERE id=? AND maternal_id=?`);
+  mothers.forEach(([id], i) => motherPin.run(hashes.mothers[i]!, i+1, id));
+  const registeredPin = db.prepare(`UPDATE mothers SET pin_hash=?, session_version=session_version+1, failed_attempts=0, locked_until=0
+    WHERE maternal_id=? AND registered_by IS NOT NULL`);
+  for (const [id, hash] of Object.entries(hashes.registered ?? {})) registeredPin.run(hash, id);
+}
+
+// Both runtimes call this inside their own database transaction.
+export function seedFromHashes(db: Database, hashes: DemoHashes) {
+  validateHashes(hashes);
   const facility = db.prepare('INSERT INTO facilities(id, name, state) VALUES (?, ?, ?) ON CONFLICT DO NOTHING');
   facility.run(1, 'Gombe Community Health Centre (Demo)', 'Gombe');
   facility.run(2, 'Gombe Riverside Health Centre (Demo)', 'Gombe');

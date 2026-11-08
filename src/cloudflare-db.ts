@@ -1,6 +1,6 @@
 import type { DurableObjectStorage } from '@cloudflare/workers-types';
 import type { Database } from './db.js';
-import { seedFromHashes } from './seed.js';
+import { resetDemoPins, seedFromHashes } from './seed.js';
 import initial from '../migrations/001_initial.sql';
 import renamed from '../migrations/002_rename_demo_staff.sql';
 import careForms from '../migrations/003_care_forms.sql';
@@ -39,9 +39,15 @@ export function openClinicStorage(storage: DurableObjectStorage, seed?: string):
     for (const migration of migrations.slice(version)) {
       db.exec(migration.replace(/^PRAGMA (?:user_version|foreign_keys)\s*=.*?;\s*$/gmi, ''));
     }
-    if (!version) {
+    const pinsReady = storage.kv.get<boolean>('four-digit-demo-pins');
+    if (!version || (!pinsReady && seed)) {
       if (!seed) throw new Error('First setup requires demo credential hashes.');
-      seedFromHashes(db, JSON.parse(seed));
+      const hashes = JSON.parse(seed);
+      if (!version) seedFromHashes(db, hashes);
+      if (hashes.pinFormat === 4) {
+        if (version) resetDemoPins(db, hashes);
+        storage.kv.put('four-digit-demo-pins', true);
+      }
     }
     if (version < migrations.length) storage.kv.put('schema-version', migrations.length);
   });

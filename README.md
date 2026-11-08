@@ -20,14 +20,16 @@ To test or run the compiled app, use `npm run check` followed by `npm start`. Th
 
 ## Try each role
 
-Choose **Clinic team** for staff or **Mother** for a maternal account. Look up the setting in the last column in your local `.env` file and enter its value as your password or PIN. For the hosted demo, use `.env.cloud-demo` instead. Use the current staff addresses below.
+For a ten-minute test with teammates, follow the [team test guide](TEAM-TEST.md).
+
+Choose **Clinic team** and enter a one-word username and its four-digit PIN. Choose **Mother** to use a Maternal ID and four-digit PIN, including in the phone simulator. Enter all four digits even if the PIN starts with zero. Find each PIN in the private settings below: `.env` for local use or `.env.cloud-demo` for the hosted demo.
 
 | Account | Identifier | Credential setting |
 | --- | --- | --- |
-| Health worker at Community Health Centre | `worker@tafiyaruwa.test` | `SEED_WORKER_PASSWORD` |
-| Health worker at Riverside Health Centre | `worker2@tafiyaruwa.test` | `SEED_WORKER2_PASSWORD` |
-| Provider at Gombe Referral Hospital | `provider@tafiyaruwa.test` | `SEED_PROVIDER_PASSWORD` |
-| Administrator | `admin@tafiyaruwa.test` | `SEED_ADMIN_PASSWORD` |
+| Health worker at Community Health Centre | `worker` | `SEED_WORKER_PASSWORD` |
+| Health worker at Riverside Health Centre | `riverside` | `SEED_WORKER2_PASSWORD` |
+| Provider at Gombe Referral Hospital | `provider` | `SEED_PROVIDER_PASSWORD` |
+| Administrator | `admin` | `SEED_ADMIN_PASSWORD` |
 | Demo Mother A | `MC-7KQ4XM` | `SEED_MOTHER_PIN` |
 | Demo Mother B | `MC-8RZ5TN` | `SEED_MOTHER_B_PIN` |
 | Demo Mother C | `MC-6VP9KD` | `SEED_MOTHER_C_PIN` |
@@ -36,7 +38,7 @@ Choose **Clinic team** for staff or **Mother** for a maternal account. Look up t
 
 ## Try registration, a visit and an appointment
 
-1. Sign in as `worker@tafiyaruwa.test` and select **Register a mother**. Enter a fictional name and age, choose her preferred language and set a demo PIN. The consent tick box records whether she agrees to share her record with other participating clinics. Leaving it unchecked still allows local registration.
+1. Sign in as `worker` and select **Register a mother**. Enter a fictional name and age, choose her preferred language and set a four-digit PIN. The consent tick box records whether she agrees to share her record with other participating clinics. Leaving it unchecked still allows local registration.
 2. Save the registration and copy the new Maternal ID. Record a visit dated today and enter the date of her next appointment. To record another visit later, use **Open a record** at the same clinic and enter the ID.
 3. In a separate browser session, choose **Mother** and sign in with that ID and PIN. Check the date and clinic. Switch between **English** and **Hausa**, then sign out and back in to verify the saved preference.
 
@@ -73,5 +75,7 @@ The public demo uses the free `tafiyar-uwa.pages.dev` address. Its small Pages e
 For a local Worker preview, run `npm run setup`, `npm run worker:prepare` and `npm run worker:dev`. For a first public deployment, sign in to the target Cloudflare account with Wrangler, verify the Worker name in `wrangler.jsonc` and run `npm run worker:deploy`. Keep the generated local `.env.cloud-demo` file private. It contains the dedicated public-demo account credentials, using the setting names in the table above. The upload contains salted credential hashes and a session secret. When updating an existing instance from another machine, use `npx wrangler deploy` to reuse its existing secrets.
 
 The Pages project is configured in `pages/wrangler.jsonc`; its `APP` service name must match the Worker. Publish the public entry point with `npm run pages:deploy`. On a new account, first create the Pages project with `npx wrangler pages project create tafiyar-uwa --production-branch main --force` (choose another available project name if needed). The `--force` option selects Pages hosting for the free Pages address instead of Wrangler's automatic Workers conversion. Ordinary application updates need only a Worker deployment; changes under `pages/` need a Pages deployment. Neither deployment resets the saved database.
+
+For the one-time four-digit upgrade on an existing hosted demo, set the nine seed PINs in the private `.env.cloud-demo` file and run `npm run worker:deploy`. Include a `DEMO_REGISTERED_PINS` JSON object mapping any additional fictional Maternal IDs you want to rotate to their individual four-digit strings. The upload includes salted hashes and applies the change once, keeping appointments and logs. Local `npm run setup` upgrades legacy seed settings, or run `npm run setup -- --reset-demo-pins` to apply deliberately edited private settings to the local database. Keep the private PIN directory and any old settings backups out of Git.
 
 The full browser check runs with `node --import tsx scripts/check-step4-browser.mjs` and a Playwright Chromium installation. By default it creates a disposable local database and exercises registration, a visit, both maternal interfaces, a hospital lookup, an audit and a simulated reminder. To check a deployed demo, set `DEMO_CHECK_ORIGIN` and supply its `DEMO_CHECK_WORKER_PASSWORD`, `DEMO_CHECK_PROVIDER_PASSWORD` and `DEMO_CHECK_ADMIN_PASSWORD` privately. This creates a fictional demonstration record on the target.

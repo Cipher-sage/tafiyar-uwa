@@ -13,6 +13,7 @@ import { addProviderRoutes } from './provider-routes.js';
 import { addStepFourRoutes } from './simulator-routes.js';
 import { interfaceLanguage, rememberLanguage } from './interface-language.js';
 import { getCopy } from './i18n.js';
+import { demoStaff } from './demo-staff.js';
 
 interface AccountRow { id: number; secret_hash: string; session_version: number }
 
@@ -71,6 +72,8 @@ export async function createApp(db: Database, config: AppConfig): Promise<Hono<A
     const hashColumn = staff ? 'password_hash' : 'pin_hash';
     const lookup = db.prepare(`SELECT id, ${hashColumn} AS secret_hash, session_version FROM ${table}
       WHERE ${staff ? 'email = ? OR phone = ?' : 'maternal_id = ?'}`);
+    const lookupRoleName = staff && db.prepare(`SELECT id, password_hash AS secret_hash, session_version
+      FROM users WHERE id = ? AND role = ? AND email = ? AND facility_id = ?`);
     // SQLite checks these conditions when each hash verification finishes, even if several overlap.
     const eligible = `id = ? AND ${hashColumn} = ? AND session_version = ? AND locked_until <= ?${staff ? ' AND active = 1' : ''}`;
     const recordFailure = db.prepare(`UPDATE ${table} SET
@@ -95,10 +98,13 @@ export async function createApp(db: Database, config: AppConfig): Promise<Hono<A
         return c.html(failedLogin(messages.invalidForm), 400);
       }
       const identifier = type === 'mother' ? rawIdentifier.trim().toUpperCase() : rawIdentifier.trim().toLowerCase();
-      const throttleKey = `${type}:${identifier}`;
+      const alias = staff && demoStaff.find(account => account[5] === identifier);
+      const throttleKey = `${type}:${alias ? alias[3] : identifier}`;
       const startedAt = Date.now();
       if (!throttle.allow(throttleKey, startedAt)) return c.html(failedLogin(messages.rateLimited), 429);
-      const account = lookup.get(...(staff ? [identifier, identifier] : [identifier])) as AccountRow | undefined;
+      const account = (alias && lookupRoleName
+        ? lookupRoleName.get(alias[0], alias[1], alias[3], alias[4])
+        : lookup.get(...(staff ? [identifier, identifier] : [identifier]))) as AccountRow | undefined;
       const matches = await verifySecret(password, account?.secret_hash ?? dummyHash);
       const now = Date.now();
       if (account) {

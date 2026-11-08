@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { openDatabase, migrate, ensureMigrated } from '../src/db.js';
-import { generateSeedSecrets, generateSeedSettings, seedDatabase, seedSecretsFromEnv } from '../src/seed.js';
+import { demoHashes, generateSeedSecrets, generateSeedSettings, resetDemoPins, seedDatabase, seedSecretsFromEnv } from '../src/seed.js';
 import { hashSecret, verifySecret, signSession, verifySession } from '../src/crypto.js';
 import { LoginThrottle } from '../src/auth.js';
 
@@ -75,6 +75,8 @@ test('seed is idempotent and preserves existing account credentials', async () =
 test('setup fills missing per-account credentials while preserving existing values', () => {
   const settings = generateSeedSettings({ SEED_MOTHER_PIN: credentials.motherPins[0], SEED_WORKER_PASSWORD: credentials.workerPassword });
   const upgraded = seedSecretsFromEnv(settings);
+  assert.ok(Object.values(settings).every(value => /^\d{4}$/.test(value)));
+  assert.equal(new Set(Object.values(settings)).size, 9);
   assert.equal(upgraded.motherPins[0], credentials.motherPins[0]);
   assert.equal(new Set(upgraded.motherPins).size, 5);
   assert.equal(upgraded.workerPassword, credentials.workerPassword);
@@ -90,7 +92,7 @@ test('seeding replaces legacy shared credentials, revokes those sessions and pre
     await seedDatabase(migratedDb, credentials);
     migratedDb.exec('UPDATE users SET password_hash = (SELECT password_hash FROM users WHERE id=2) WHERE id=4');
     migratedDb.exec('UPDATE mothers SET pin_hash = (SELECT pin_hash FROM mothers WHERE id=1) WHERE id IN (2, 4, 5)');
-    const personalHash = await hashSecret(generateSeedSecrets().motherPins[2]!);
+    const personalHash = await hashSecret(randomBytes(18).toString('hex'));
     migratedDb.prepare('UPDATE mothers SET pin_hash = ? WHERE id = 3').run(personalHash);
     await seedDatabase(migratedDb, credentials);
     const rows = migratedDb.prepare('SELECT pin_hash, session_version FROM mothers ORDER BY id').all() as { pin_hash: string; session_version: number }[];
@@ -107,12 +109,47 @@ test('seeding replaces legacy shared credentials, revokes those sessions and pre
   } finally { migratedDb.close(); }
 });
 
+test('an explicit demo PIN reset revokes sessions, clears locks and preserves unrelated accounts and visits', async () => {
+  const reset = openDatabase(':memory:');
+  try {
+    migrate(reset);
+    await seedDatabase(reset, credentials);
+    const changed = { ...credentials, workerPassword: credentials.adminPassword, adminPassword: credentials.workerPassword };
+    const registeredId = 'MC-ABCD23';
+    const unrelatedId = 'MC-BCDE34';
+    const prior = reset.prepare('SELECT pin_hash FROM mothers WHERE id=1').get()!.pin_hash as string;
+    const add = reset.prepare(`INSERT INTO mothers(maternal_id, name, age, pin_hash, language, registered_facility_id, consent_to_share, registered_by)
+      VALUES (?, 'Fictional test', 26, ?, 'ha', 1, 0, 2)`);
+    add.run(registeredId, prior);
+    add.run(unrelatedId, prior);
+    reset.exec(`UPDATE users SET email='custom@example.test' WHERE id=3;
+      UPDATE users SET failed_attempts=5, locked_until=12345;
+      INSERT INTO visits(mother_id,facility_id,visit_date,recorded_by) VALUES (1,1,'2026-11-08',2);`);
+    const visits = reset.prepare('SELECT * FROM visits').all();
+    const provider = reset.prepare('SELECT * FROM users WHERE id=3').get();
+    const hashes = await demoHashes(changed, JSON.stringify({ [registeredId]: changed.motherPins[1] }));
+    reset.exec('BEGIN');
+    resetDemoPins(reset, hashes);
+    reset.exec('COMMIT');
+    const worker = reset.prepare('SELECT * FROM users WHERE id=2').get()!;
+    assert.ok(await verifySecret(changed.workerPassword, String(worker.password_hash)));
+    assert.equal(await verifySecret(credentials.workerPassword, String(worker.password_hash)), false);
+    assert.deepEqual([worker.failed_attempts, worker.locked_until, worker.session_version], [0, 0, 1]);
+    assert.equal(reset.prepare('SELECT session_version FROM mothers WHERE id=1').get()!.session_version, 1);
+    const getMother = (id: string) => reset.prepare('SELECT pin_hash, session_version FROM mothers WHERE maternal_id=?').get(id)!;
+    assert.ok(await verifySecret(changed.motherPins[1]!, String(getMother(registeredId).pin_hash)));
+    assert.equal(getMother(registeredId).session_version, 1);
+    assert.deepEqual([getMother(unrelatedId).pin_hash, getMother(unrelatedId).session_version], [prior, 0]);
+    assert.deepEqual(reset.prepare('SELECT * FROM users WHERE id=3').get(), provider);
+    assert.deepEqual(reset.prepare('SELECT * FROM visits').all(), visits);
+  } finally { reset.close(); }
+});
+
 test('database stores salted credential hashes rather than passwords or PINs', async () => {
   const users = db.prepare('SELECT email, password_hash FROM users').all() as { email: string; password_hash: string }[];
   const mothers = db.prepare('SELECT pin_hash FROM mothers ORDER BY id').all() as { pin_hash: string }[];
   for (const row of users) {
-    assert.ok(row.password_hash.startsWith('scrypt$'), 'staff passwords are hashed');
-    for (const secret of Object.values(credentials).flat()) assert.ok(!row.password_hash.includes(secret), 'staff hash contains no raw credential');
+    assert.match(row.password_hash, /^scrypt\$32768\$8\$3\$[a-f0-9]{32}\$[a-f0-9]{64}$/);
   }
   for (const [i, row] of mothers.entries()) {
     assert.ok(row.pin_hash.startsWith('scrypt$'), 'mother PINs are hashed');

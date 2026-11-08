@@ -92,7 +92,7 @@ function readRegistration(input: FormInput) {
   const expectedDeliveryDate = dateField(input, 'expectedDeliveryDate', errors);
   const consentToShare = ['on', '1', 'true', true].includes(input.consentToShare as string | boolean);
   const pin = typeof input.pin === 'string' ? input.pin : '';
-  if (!/^\d{8,12}$/.test(pin)) errors.pin = 'invalidPin';
+  if (!/^[0-9]{4}$/.test(pin)) errors.pin = 'invalidPin';
   if (input.pinConfirm !== pin) errors.pinConfirm = 'pinMismatch';
   if (Object.keys(errors).length) throw new CareError('validation', 422, errors);
   return { requestKey, pin, details: { name, age, phone, language, expectedDeliveryDate, consentToShare } };

@@ -58,7 +58,7 @@ try {
 
   async function login(page, role) {
     await page.goto(origin + '/login');
-    await page.locator('[name=identifier]').fill(role + '@tafiyaruwa.test');
+    await page.locator('[name=identifier]').fill(role);
     await page.locator('[name=password]').fill(credentials[role + 'Password']);
     await page.locator('button[type=submit]').click();
     await page.waitForURL(origin + '/' + role);
